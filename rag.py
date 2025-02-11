@@ -3,12 +3,30 @@ import asyncio
 from ollama import AsyncClient
 
 
+messages = []
+
 async def main():
-    response = await AsyncClient().generate(model='llama3.2', prompt="Whats the weather in mars", system="Answer in a sarcastic way",stream=True)
+    prompt= input("Ask your questions! Ready to help :")
 
+    if prompt == "exit":
+        return "exit"
+        
+
+    messages.append({"role":"user", "content": f"{prompt}" })
+    response = await AsyncClient().chat(model='qwen2.5', messages = messages,stream=True)
+
+    full_response = ""
     async for chunk in response:
-        print(chunk.response, end="", flush=True)
+        full_response+=chunk.message.content
+        print(chunk.message.content, end="", flush=True)
+ 
+    messages.append({"role": "assistant", "content" : full_response})
+    print(end="\n\n")
 
-asyncio.run(main())
+
+while True:
+    value = asyncio.run(main())
+    if value == "exit":
+        break
 
 
