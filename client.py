@@ -1,7 +1,7 @@
-from google import genai
 import os
 from dotenv import load_dotenv
+from openai import OpenAI
 
 load_dotenv()
 
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
