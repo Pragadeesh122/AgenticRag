@@ -1,8 +1,7 @@
 import json
-from client import client
-from tool_definitions import tools
-from functions import search
-import os
+from clients import openai_client
+from tools import tools
+from functions.tool_router import execute_tool_call
 
 
 def main():
@@ -20,7 +19,7 @@ def main():
 
         messages.append({"role": "user", "content": content})
         while True:
-            response = client.chat.completions.create(
+            response = openai_client.chat.completions.create(
                 model="gpt-5-mini",
                 messages=messages,
                 tools=tools,
@@ -34,15 +33,7 @@ def main():
 
             messages.append(message.model_dump())
             for tool_call in message.tool_calls:
-                args = json.loads(tool_call.function.arguments)
-                result = search(**args)
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": json.dumps(result),
-                    }
-                )
+                messages.append(execute_tool_call(tool_call))
 
         messages.append({"role": "assistant", "content": message.content})
         print("----" * 30)

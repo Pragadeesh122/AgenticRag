@@ -1,4 +1,4 @@
-search_tool = {
+search = {
     "type": "function",
     "function": {
         "name": "search",
@@ -16,5 +16,22 @@ search_tool = {
     },
 }
 
+portfolio = {
+    "type": "function",
+    "function": {
+        "name": "portfolio",
+        "description": "Use this function whenever a question is asked about an individual named pragadeesh",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "the search about Pragadeesh",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+}
 
-tools = [search_tool]
+tools = [search, portfolio]
