@@ -37,12 +37,20 @@ def query_local_kb(query: str) -> list:
     if not os.path.exists(INDEX_PATH):
         return [{"error": "No local knowledge base found. Please build the index first."}]
 
-    index = faiss.read_index(INDEX_PATH)
-    with open(METADATA_PATH, "r") as f:
-        documents = json.load(f)
+    try:
+        index = faiss.read_index(INDEX_PATH)
+        with open(METADATA_PATH, "r") as f:
+            documents = json.load(f)
+    except Exception as e:
+        logger.error(f"failed to load index/metadata: {e}")
+        return [{"error": f"Failed to load knowledge base: {e}"}]
 
-    response = openai_client.embeddings.create(input=query, model=EMBEDDING_MODEL)
-    query_vector = np.array([response.data[0].embedding], dtype=np.float32)
+    try:
+        response = openai_client.embeddings.create(input=query, model=EMBEDDING_MODEL)
+        query_vector = np.array([response.data[0].embedding], dtype=np.float32)
+    except Exception as e:
+        logger.error(f"embedding failed: {e}")
+        return [{"error": f"Embedding failed: {e}"}]
 
     distances, indices = index.search(query_vector, k=5)
 

@@ -14,12 +14,37 @@ available_functions = {
 
 
 def execute_tool_call(tool_call) -> dict:
-    fn = available_functions[tool_call.function.name]
-    args = json.loads(tool_call.function.arguments)
-    logger.info(f"executing: {tool_call.function.name}({args})")
-    result = fn(**args)
-    return {
-        "role": "tool",
-        "tool_call_id": tool_call.id,
-        "content": json.dumps(result),
-    }
+    name = tool_call.function.name
+    try:
+        args = json.loads(tool_call.function.arguments)
+    except json.JSONDecodeError as e:
+        logger.error(f"failed to parse arguments for {name}: {e}")
+        return {
+            "role": "tool",
+            "tool_call_id": tool_call.id,
+            "content": json.dumps({"error": f"Invalid arguments: {e}"}),
+        }
+
+    if name not in available_functions:
+        logger.error(f"unknown tool: {name}")
+        return {
+            "role": "tool",
+            "tool_call_id": tool_call.id,
+            "content": json.dumps({"error": f"Unknown tool: {name}"}),
+        }
+
+    logger.info(f"executing: {name}({args})")
+    try:
+        result = available_functions[name](**args)
+        return {
+            "role": "tool",
+            "tool_call_id": tool_call.id,
+            "content": json.dumps(result),
+        }
+    except Exception as e:
+        logger.error(f"tool {name} failed: {e}")
+        return {
+            "role": "tool",
+            "tool_call_id": tool_call.id,
+            "content": json.dumps({"error": f"Tool execution failed: {e}"}),
+        }

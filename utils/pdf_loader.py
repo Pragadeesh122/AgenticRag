@@ -8,6 +8,10 @@ logger = logging.getLogger("pdf-loader")
 
 def load_pdfs(directory: str = "data") -> list[dict]:
     """Load all PDFs from a directory and return chunked documents."""
+    if not os.path.isdir(directory):
+        logger.error(f"directory not found: {directory}")
+        return []
+
     documents = []
 
     for root, _, files in os.walk(directory):
@@ -16,11 +20,22 @@ def load_pdfs(directory: str = "data") -> list[dict]:
                 continue
 
             filepath = os.path.join(root, filename)
-            reader = PdfReader(filepath)
+            try:
+                reader = PdfReader(filepath)
+            except Exception as e:
+                logger.error(f"failed to read {filename}: {e}")
+                continue
 
             text = ""
             for page in reader.pages:
-                text += page.extract_text() or ""
+                try:
+                    text += page.extract_text() or ""
+                except Exception as e:
+                    logger.warning(f"failed to extract page from {filename}: {e}")
+
+            if not text.strip():
+                logger.warning(f"no text extracted from {filename}, skipping")
+                continue
 
             chunks = chunk_text(text, chunk_size=500, overlap=150)
 

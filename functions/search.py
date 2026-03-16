@@ -6,13 +6,26 @@ from clients import openai_client
 logger = logging.getLogger("search-agent")
 
 
-def search(query: str) -> list:
+def search(query: str) -> str:
+    api_key = os.getenv("BRAVE_API_KEY")
+    if not api_key:
+        logger.error("BRAVE_API_KEY not set")
+        return "Search failed: BRAVE_API_KEY not configured."
 
-    response = requests.get(
-        "https://api.search.brave.com/res/v1/web/search",
-        headers={"X-Subscription-Token": os.getenv("BRAVE_API_KEY")},
-        params={"q": query, "count": 5, "extra_snippets": True},
-    )
+    try:
+        response = requests.get(
+            "https://api.search.brave.com/res/v1/web/search",
+            headers={"X-Subscription-Token": api_key},
+            params={"q": query, "count": 5, "extra_snippets": True},
+            timeout=10,
+        )
+        response.raise_for_status()
+    except requests.Timeout:
+        logger.error(f"brave search timed out for: '{query}'")
+        return "Search failed: request timed out."
+    except requests.RequestException as e:
+        logger.error(f"brave search request failed: {e}")
+        return f"Search failed: {e}"
 
     searchResponse = response.json().get("web", {}).get("results", [])
 
@@ -29,17 +42,23 @@ def search(query: str) -> list:
 
     logger.info(f"brave search: '{query}' → {len(results)} results")
 
-    llm_response = openai_client.chat.completions.create(
-        model="gpt-5-mini",
-        messages=[
-            {
-                "role": "system",
-                "content": "Summarize the search results concisely. Keep key facts, dates, and URLs.",
-            },
-            {"role": "user", "content": str(results)},
-        ],
-    )
+    if not results:
+        return f"No search results found for: '{query}'"
 
-    logger.info(f"summarize: {llm_response.usage.prompt_tokens} in, {llm_response.usage.completion_tokens} out")
+    try:
+        llm_response = openai_client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Summarize the search results concisely. Keep key facts, dates, and URLs.",
+                },
+                {"role": "user", "content": str(results)},
+            ],
+        )
 
-    return llm_response.choices[0].message.content
+        logger.info(f"summarize: {llm_response.usage.prompt_tokens} in, {llm_response.usage.completion_tokens} out")
+        return llm_response.choices[0].message.content
+    except Exception as e:
+        logger.error(f"summarization failed: {e}")
+        return str(results)
