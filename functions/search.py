@@ -1,5 +1,9 @@
 import requests
 import os
+import logging
+from clients import openai_client
+
+logger = logging.getLogger("search-agent")
 
 
 def search(query: str) -> list:
@@ -23,4 +27,19 @@ def search(query: str) -> list:
             }
         )
 
-    return results
+    logger.info(f"brave search: '{query}' → {len(results)} results")
+
+    llm_response = openai_client.chat.completions.create(
+        model="gpt-5-mini",
+        messages=[
+            {
+                "role": "system",
+                "content": "Summarize the search results concisely. Keep key facts, dates, and URLs.",
+            },
+            {"role": "user", "content": str(results)},
+        ],
+    )
+
+    logger.info(f"summarize: {llm_response.usage.prompt_tokens} in, {llm_response.usage.completion_tokens} out")
+
+    return llm_response.choices[0].message.content
