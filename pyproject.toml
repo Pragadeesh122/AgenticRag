@@ -10,5 +10,6 @@ dependencies = [
     "google-genai>=1.66.0",
     "openai>=2.28.0",
     "pinecone>=8.1.0",
+    "pypdf>=6.9.0",
     "requests>=2.32.5",
 ]

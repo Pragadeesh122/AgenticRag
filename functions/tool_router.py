@@ -2,10 +2,15 @@ import json
 import logging
 from functions.search import search
 from functions.portfolio import portfolio
+from functions.local_kb import query_local_kb
 
 logger = logging.getLogger("tool-router")
 
-available_functions = {"search": search, "portfolio": portfolio}
+available_functions = {
+    "search": search,
+    "portfolio": portfolio,
+    "query_local_kb": query_local_kb,
+}
 
 
 def execute_tool_call(tool_call) -> dict:
