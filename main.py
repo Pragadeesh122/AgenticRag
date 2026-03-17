@@ -43,11 +43,14 @@ def main():
                 if not message.tool_calls or tool_call_count >= MAX_TOOL_CALLS:
                     if tool_call_count >= MAX_TOOL_CALLS:
                         logger.info(f"max tool calls reached ({MAX_TOOL_CALLS})")
+                        stop_msg = {"role": "system", "content": "You have reached the maximum number of tool calls. Do NOT attempt any more tool calls. Respond with the best answer you can based on the information you have gathered so far."}
+                        messages.append(stop_msg)
                         response = openai_client.chat.completions.create(
                             model="gpt-5-mini",
                             messages=messages,
                         )
                         message = response.choices[0].message
+                        messages.remove(stop_msg)
                         logger.info(
                             f"tokens: {response.usage.prompt_tokens} in, {response.usage.completion_tokens} out"
                         )

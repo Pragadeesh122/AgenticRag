@@ -1,7 +1,7 @@
 import requests
 import os
 import logging
-from clients import openai_client
+from clients import ollama_client
 
 logger = logging.getLogger("search-agent")
 
@@ -46,8 +46,8 @@ def search(query: str) -> str:
         return f"No search results found for: '{query}'"
 
     try:
-        llm_response = openai_client.chat.completions.create(
-            model="gpt-5-mini",
+        llm_response = ollama_client.chat.completions.create(
+            model="qwen2.5:14b",
             messages=[
                 {
                     "role": "system",
@@ -57,7 +57,9 @@ def search(query: str) -> str:
             ],
         )
 
-        logger.info(f"summarize: {llm_response.usage.prompt_tokens} in, {llm_response.usage.completion_tokens} out")
+        logger.info(
+            f"summarize: {llm_response.usage.prompt_tokens} in, {llm_response.usage.completion_tokens} out"
+        )
         return llm_response.choices[0].message.content
     except Exception as e:
         logger.error(f"summarization failed: {e}")
