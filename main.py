@@ -4,6 +4,7 @@ from clients import openai_client
 from tools import tools
 from functions.tool_router import execute_tool_call
 from utils.summarizer import summarize_messages
+from memory import get_user_memory, extract_and_save_memories
 
 logging.basicConfig(level=logging.INFO, format="%(name)s | %(message)s")
 logger = logging.getLogger("orchestrator")
@@ -14,13 +15,23 @@ MAX_TOOL_CALLS = 3
 
 def main():
     print("Hello from agenticrag!")
-    messages = [{"role": "system", "content": "Always answer in humor"}]
+
+    # Load semantic memory into system prompt
+    system_prompt = "Always answer in humor"
+    user_memory = get_user_memory()
+    if user_memory:
+        system_prompt += f"\n\nKnown facts about the user:\n{user_memory}"
+        logger.info("loaded user memory from Redis")
+
+    messages = [{"role": "system", "content": system_prompt}]
 
     while True:
         content = input("")
 
         if content == "exit":
-            print(messages)
+            # Extract and save memories before exiting
+            logger.info("extracting memories from conversation")
+            extract_and_save_memories(messages)
             with open("results.json", "w") as file:
                 json.dump(messages, file, indent=2)
             break
@@ -43,7 +54,10 @@ def main():
                 if not message.tool_calls or tool_call_count >= MAX_TOOL_CALLS:
                     if tool_call_count >= MAX_TOOL_CALLS:
                         logger.info(f"max tool calls reached ({MAX_TOOL_CALLS})")
-                        stop_msg = {"role": "system", "content": "You have reached the maximum number of tool calls. Do NOT attempt any more tool calls. Respond with the best answer you can based on the information you have gathered so far."}
+                        stop_msg = {
+                            "role": "system",
+                            "content": "You have reached the maximum number of tool calls. Do NOT attempt any more tool calls. Respond with the best answer you can based on the information you have gathered so far.",
+                        }
                         messages.append(stop_msg)
                         response = openai_client.chat.completions.create(
                             model="gpt-5-mini",

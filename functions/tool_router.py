@@ -3,6 +3,7 @@ import logging
 from functions.search import search
 from functions.portfolio import portfolio
 from functions.local_kb import query_local_kb
+from memory.cache import get_cached_result, cache_result
 
 logger = logging.getLogger("tool-router")
 
@@ -11,6 +12,8 @@ available_functions = {
     "portfolio": portfolio,
     "query_local_kb": query_local_kb,
 }
+
+CACHEABLE_TOOLS = {"search", "portfolio", "query_local_kb"}
 
 
 def execute_tool_call(tool_call) -> dict:
@@ -33,13 +36,30 @@ def execute_tool_call(tool_call) -> dict:
             "content": json.dumps({"error": f"Unknown tool: {name}"}),
         }
 
+    # Check cache for similar queries
+    query_str = args.get("query", "")
+    if name in CACHEABLE_TOOLS and query_str:
+        cached = get_cached_result(name, query_str)
+        if cached:
+            return {
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": cached,
+            }
+
     logger.info(f"executing: {name}({args})")
     try:
         result = available_functions[name](**args)
+        result_str = json.dumps(result)
+
+        # Cache the result
+        if name in CACHEABLE_TOOLS and query_str:
+            cache_result(name, query_str, result_str)
+
         return {
             "role": "tool",
             "tool_call_id": tool_call.id,
-            "content": json.dumps(result),
+            "content": result_str,
         }
     except Exception as e:
         logger.error(f"tool {name} failed: {e}")
