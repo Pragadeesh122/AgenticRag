@@ -24,3 +24,6 @@ __pycache__/
 
 results*
 data
+
+prompts
+test_reports

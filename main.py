@@ -1,10 +1,12 @@
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from clients import openai_client
 from tools import tools
 from functions.tool_router import execute_tool_call
 from utils.summarizer import summarize_messages
 from memory import get_user_memory, extract_and_save_memories
+from prompts import ORCHESTRATOR
 
 logging.basicConfig(level=logging.INFO, format="%(name)s | %(message)s")
 logger = logging.getLogger("orchestrator")
@@ -17,7 +19,7 @@ def main():
     print("Hello from agenticrag!")
 
     # Load semantic memory into system prompt
-    system_prompt = "Always answer in humor"
+    system_prompt = ORCHESTRATOR
     user_memory = get_user_memory()
     if user_memory:
         system_prompt += f"\n\nKnown facts about the user:\n{user_memory}"
@@ -41,7 +43,7 @@ def main():
         try:
             while True:
                 response = openai_client.chat.completions.create(
-                    model="gpt-5-mini",
+                    model="gpt-5.4-mini",
                     messages=messages,
                     tools=tools,
                 )
@@ -77,8 +79,19 @@ def main():
                     f"tool_calls: {[t.function.name for t in message.tool_calls]} ({tool_call_count}/{MAX_TOOL_CALLS})"
                 )
                 messages.append(message.model_dump())
-                for tool_call in message.tool_calls:
-                    messages.append(execute_tool_call(tool_call))
+                with ThreadPoolExecutor() as executor:
+                    futures = {
+                        executor.submit(execute_tool_call, tc): tc
+                        for tc in message.tool_calls
+                    }
+                    results = []
+                    for future in as_completed(futures):
+                        results.append((futures[future], future.result()))
+                    # Preserve original tool call order
+                    order = {tc.id: i for i, tc in enumerate(message.tool_calls)}
+                    results.sort(key=lambda r: order[r[0].id])
+                    for _, result in results:
+                        messages.append(result)
         except KeyboardInterrupt:
             print("\nInterrupted.")
             break

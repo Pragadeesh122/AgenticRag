@@ -2,6 +2,7 @@ import json
 import logging
 from memory.redis_client import redis_client
 from clients import openai_client
+from prompts.memory import MEMORY, MEMORY_COMPARISON
 
 logger = logging.getLogger("memory")
 
@@ -34,7 +35,13 @@ def extract_and_save_memories(messages: list):
     existing = redis_client.hgetall(MEMORY_KEY)
 
     conversation = json.dumps(
-        [m for m in messages if isinstance(m, dict) and m.get("role") in ("user", "assistant") and m.get("content")],
+        [
+            m
+            for m in messages
+            if isinstance(m, dict)
+            and m.get("role") in ("user", "assistant")
+            and m.get("content")
+        ],
         indent=1,
     )
 
@@ -44,22 +51,7 @@ def extract_and_save_memories(messages: list):
         messages=[
             {
                 "role": "system",
-                "content": (
-                    "Extract ONLY NEW facts about the user from this conversation. "
-                    "Return a JSON object with ONLY the keys that have NEW information. "
-                    "Available keys:\n"
-                    "- work_context: role, company, projects, tech stack, achievements\n"
-                    "- personal_context: location, background, interests, goals\n"
-                    "- top_of_mind: what the user is currently focused on or exploring\n"
-                    "- preferences: how they like to work, communication style, tool preferences\n\n"
-                    "IMPORTANT: Only include a key if there is genuinely new information learned in THIS conversation. "
-                    "Do NOT include empty strings, null values, or placeholder text. "
-                    "If nothing new was learned about a category, omit the key entirely. "
-                    "Each value should be concise bullet points of new facts only. "
-                    "Do NOT include conversation-specific details like 'user asked about X'. "
-                    "Only include durable facts useful for personalizing future conversations. "
-                    "Return only valid JSON, nothing else."
-                ),
+                "content": MEMORY,
             },
             {"role": "user", "content": f"Conversation:\n{conversation}"},
         ],
@@ -82,13 +74,7 @@ def extract_and_save_memories(messages: list):
                     messages=[
                         {
                             "role": "system",
-                            "content": (
-                                "Merge the existing memory with the new facts into a single cohesive paragraph. "
-                                "Keep ALL existing facts and ADD the new ones. "
-                                "If new info contradicts or updates old info, use the new info. "
-                                "Otherwise, preserve everything. Keep it concise (3-6 sentences). "
-                                "Return ONLY the merged text, nothing else."
-                            ),
+                            "content": MEMORY_COMPARISON,
                         },
                         {
                             "role": "user",
