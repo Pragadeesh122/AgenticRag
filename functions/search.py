@@ -1,7 +1,7 @@
 import requests
 import os
 import logging
-from clients import ollama_client
+from clients import openai_client
 from prompts.search_summarizer import SEARCH_SUMMARIZER
 
 logger = logging.getLogger("search-agent")
@@ -67,7 +67,7 @@ def search(query: str) -> str:
         return f"No search results found for: '{query}'"
 
     try:
-        llm_response = ollama_client.chat.completions.create(
+        llm_response = openai_client.chat.completions.create(
             model="gpt-5.4-mini",
             messages=[
                 {

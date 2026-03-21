@@ -83,7 +83,7 @@ def run(n: int = 5) -> list[dict]:
         print(f"PROMPT: {prompt}")
         print(f"{'=' * 60}")
 
-        result = send_prompt(proc, stderr_logs, prompt)
+        result = send_prompt(proc, stderr_logs, prompt, timeout=300)
         print(f"TOOLS USED: {result['tools_used'] or '(none)'}")
         cache_status = result["cache_hits"] if result["cache_hits"] else "miss"
         print(f"CACHE: {cache_status}")

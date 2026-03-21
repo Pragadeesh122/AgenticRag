@@ -19,7 +19,7 @@ logger = logging.getLogger("cache")
 
 CACHE_PREFIX = "toolcache"
 INDEX_NAME = f"{CACHE_PREFIX}:idx"
-DEFAULT_TTL = 60 * 60 * 60  # 24h
+DEFAULT_TTL = 60 * 60 * 24  # 24h
 SIMILARITY_THRESHOLD = 0.87
 EMBEDDING_DIM = 1536  # text-embedding-3-small
 
