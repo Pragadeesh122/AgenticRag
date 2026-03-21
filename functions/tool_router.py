@@ -1,19 +1,9 @@
 import json
 import logging
-from functions.search import search
-from functions.portfolio import portfolio
-from functions.local_kb import query_local_kb
+from functions import available_functions, cacheable_tools
 from memory.cache import get_cached_result, cache_result
 
 logger = logging.getLogger("tool-router")
-
-available_functions = {
-    "search": search,
-    "portfolio": portfolio,
-    "query_local_kb": query_local_kb,
-}
-
-CACHEABLE_TOOLS = {"search", "portfolio", "query_local_kb"}
 
 
 def execute_tool_call(tool_call) -> dict:
@@ -38,7 +28,7 @@ def execute_tool_call(tool_call) -> dict:
 
     # Check cache for similar queries
     query_str = args.get("query", "")
-    if name in CACHEABLE_TOOLS and query_str:
+    if name in cacheable_tools and query_str:
         cached = get_cached_result(name, query_str)
         if cached:
             return {
@@ -53,7 +43,7 @@ def execute_tool_call(tool_call) -> dict:
         result_str = json.dumps(result)
 
         # Cache the result
-        if name in CACHEABLE_TOOLS and query_str:
+        if name in cacheable_tools and query_str:
             cache_result(name, query_str, result_str)
 
         return {

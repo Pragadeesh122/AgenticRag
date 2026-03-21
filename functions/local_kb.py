@@ -12,6 +12,26 @@ METADATA_PATH = "data/metadata.json"
 EMBEDDING_MODEL = "text-embedding-3-large"
 DIMENSION = 3072
 
+SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "query_local_kb",
+        "description": "Search the local knowledge base for information about Citro Essential Oils Distillery Industry, essential oils, their products, processes, or any related company data.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The query to search the local knowledge base",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+CACHEABLE = True
+
 
 def build_index(documents: list[dict]):
     """

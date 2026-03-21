@@ -10,7 +10,7 @@ from test_suite.orchestrator import start_orchestrator, stop_orchestrator, send_
 def generate_test_queries(n: int = 5) -> list[str]:
     """Ask an LLM to generate diverse test queries for our agent."""
     response = openai_client.chat.completions.create(
-        model="gpt-5-mini",
+        model="gpt-5.4-mini",
         messages=[
             {
                 "role": "system",
@@ -41,7 +41,7 @@ def judge_response(prompt: str, tools_used: list[str], actual_response: str) -> 
     """Use an LLM to judge whether the agent chose the right tool and responded well."""
     tools_str = ", ".join(tools_used) if tools_used else "(none)"
     response = openai_client.chat.completions.create(
-        model="gpt-5-mini",
+        model="gpt-5.4-mini",
         messages=[
             {
                 "role": "system",
@@ -105,15 +105,17 @@ def run(n: int = 5) -> list[dict]:
             f"JUDGE: {'PASS' if passed else 'FAIL'} | tool_correct={tool_ok} | quality={quality}"
         )
         print(f"  {reason}")
-        results.append({
-            "prompt": prompt,
-            "passed": passed,
-            "reason": reason,
-            "tools_used": result.get("tools_used", []),
-            "cache_hits": result.get("cache_hits", []),
-            "response": result["response"],
-            "judge": verdict,
-        })
+        results.append(
+            {
+                "prompt": prompt,
+                "passed": passed,
+                "reason": reason,
+                "tools_used": result.get("tools_used", []),
+                "cache_hits": result.get("cache_hits", []),
+                "response": result["response"],
+                "judge": verdict,
+            }
+        )
 
     stop_orchestrator(proc)
     return results

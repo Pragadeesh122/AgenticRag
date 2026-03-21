@@ -2,8 +2,29 @@ import requests
 import os
 import logging
 from clients import ollama_client
+from prompts.search_summarizer import SEARCH_SUMMARIZER
 
 logger = logging.getLogger("search-agent")
+
+SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "search",
+        "description": "Search the web for any information. Use this for questions about current events, dates, weather, news, facts, or anything you don't know.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The search query to look up on the web",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+CACHEABLE = True
 
 
 def search(query: str) -> str:
@@ -47,11 +68,11 @@ def search(query: str) -> str:
 
     try:
         llm_response = ollama_client.chat.completions.create(
-            model="qwen2.5:14b",
+            model="gpt-5.4-mini",
             messages=[
                 {
                     "role": "system",
-                    "content": "Summarize the search results concisely. Keep key facts, dates, and URLs.",
+                    "content": SEARCH_SUMMARIZER,
                 },
                 {"role": "user", "content": str(results)},
             ],

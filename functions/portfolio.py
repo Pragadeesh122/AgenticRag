@@ -6,6 +6,26 @@ load_dotenv()
 
 logger = logging.getLogger("portfolio-agent")
 
+SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "portfolio",
+        "description": "Use this function whenever a question is asked about an individual named Pragadeesh",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The search about Pragadeesh",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+CACHEABLE = True
+
 
 def portfolio(query: str) -> list:
     try:

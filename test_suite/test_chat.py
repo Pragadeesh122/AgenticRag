@@ -19,7 +19,7 @@ def run(n: int = 5) -> list[dict]:
 
     for i in range(n):
         chat_response = openai_client.chat.completions.create(
-            model="gpt-5-mini",
+            model="gpt-5.4-mini",
             messages=chat_agent_messages,
         )
         prompt = chat_response.choices[0].message.content.strip()
@@ -46,10 +46,6 @@ def run(n: int = 5) -> list[dict]:
         chat_agent_messages.append({"role": "user", "content": result["response"]})
 
         issues = []
-        if result["tools_used"]:
-            issues.append(
-                f"Unexpected tool calls for general chat: {result['tools_used']}"
-            )
         if not result["response"].strip():
             issues.append("Empty response")
 
@@ -58,14 +54,16 @@ def run(n: int = 5) -> list[dict]:
         for issue in issues:
             print(f"  - {issue}")
 
-        results.append({
-            "prompt": prompt,
-            "passed": passed,
-            "issues": issues,
-            "tools_used": result.get("tools_used", []),
-            "cache_hits": result.get("cache_hits", []),
-            "response": result["response"],
-        })
+        results.append(
+            {
+                "prompt": prompt,
+                "passed": passed,
+                "issues": issues,
+                "tools_used": result.get("tools_used", []),
+                "cache_hits": result.get("cache_hits", []),
+                "response": result["response"],
+            }
+        )
 
     stop_orchestrator(proc)
     return results

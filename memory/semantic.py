@@ -47,7 +47,7 @@ def extract_and_save_memories(messages: list):
 
     # Phase 1: Extract only NEW facts from this conversation
     response = openai_client.chat.completions.create(
-        model="gpt-5-mini",
+        model="gpt-4o",
         messages=[
             {
                 "role": "system",
@@ -70,7 +70,7 @@ def extract_and_save_memories(messages: list):
             old_value = existing.get(category)
             if old_value:
                 merge_response = openai_client.chat.completions.create(
-                    model="gpt-5-mini",
+                    model="gpt-4o",
                     messages=[
                         {
                             "role": "system",
