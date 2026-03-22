@@ -74,6 +74,66 @@ def stream_response(messages, model="gpt-5.4-mini", use_tools=True):
     return content, None, usage
 
 
+def iter_response(messages, model="gpt-5.4-mini", use_tools=True):
+    """Yield text tokens as they arrive, then return tool_calls and usage.
+
+    Yields:
+        str: each text token as it arrives
+
+    Returns via generator .value (use wrapper to capture):
+        (content, tool_calls, usage)
+    """
+    kwargs = {"model": model, "messages": messages, "stream": True,
+              "stream_options": {"include_usage": True}}
+    if use_tools:
+        kwargs["tools"] = tools
+
+    stream = openai_client.chat.completions.create(**kwargs)
+
+    content = ""
+    tool_calls_by_index = {}
+    usage = None
+
+    for chunk in stream:
+        if chunk.usage:
+            usage = chunk.usage
+
+        delta = chunk.choices[0].delta if chunk.choices else None
+        if not delta:
+            continue
+
+        if delta.content:
+            yield delta.content
+            content += delta.content
+
+        if delta.tool_calls:
+            for tc_delta in delta.tool_calls:
+                idx = tc_delta.index
+                if idx not in tool_calls_by_index:
+                    tool_calls_by_index[idx] = {
+                        "id": tc_delta.id or "",
+                        "type": "function",
+                        "function": {"name": "", "arguments": ""},
+                    }
+                tc = tool_calls_by_index[idx]
+                if tc_delta.id:
+                    tc["id"] = tc_delta.id
+                if tc_delta.function:
+                    if tc_delta.function.name:
+                        tc["function"]["name"] += tc_delta.function.name
+                    if tc_delta.function.arguments:
+                        tc["function"]["arguments"] += tc_delta.function.arguments
+
+    if usage:
+        logger.info(f"tokens: {usage.prompt_tokens} in, {usage.completion_tokens} out")
+
+    tool_calls = None
+    if tool_calls_by_index:
+        tool_calls = [tool_calls_by_index[i] for i in sorted(tool_calls_by_index)]
+
+    return content, tool_calls, usage
+
+
 class ToolCallProxy:
     """Lightweight wrapper so execute_tool_call can access .id, .function.name, .function.arguments."""
     def __init__(self, tc_dict):
