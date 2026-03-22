@@ -41,3 +41,13 @@ def _discover_tools():
 
 
 _discover_tools()
+
+
+def get_tool_summary() -> str:
+    """Return a numbered list of registered tools with their descriptions."""
+    lines = []
+    for i, schema in enumerate(tool_schemas, 1):
+        name = schema["function"]["name"]
+        desc = schema["function"]["description"]
+        lines.append(f"{i}. {name} — {desc}")
+    return "\n".join(lines)

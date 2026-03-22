@@ -29,13 +29,9 @@ TEST_CASES = [
         "expect_tool": None,
     },
     {
-        "name": "browser_form_fill",
-        "prompt": (
-            "Go to https://pragadeeshvs.dev and fill out the contact form "
-            "with name 'test', email 'test@test.com', and a random message."
-        ),
-        "expect_tool": "browser_task",
-        "timeout": 300,
+        "name": "database_query",
+        "prompt": "How many orders were delivered last month?",
+        "expect_tool": "query_db",
     },
 ]
 
@@ -68,11 +64,6 @@ def run(cases: list[dict] = None) -> list[dict]:
                 issues.append(
                     f"Expected tool '{test['expect_tool']}' but got {result.get('tools_used', [])}"
                 )
-            # For browser_task, verify the agent completed its goal
-            if test["expect_tool"] == "browser_task":
-                browser_done = any("done:" in log for log in result.get("logs", []))
-                if not browser_done:
-                    issues.append("Browser agent did not complete its goal (no 'done' logged)")
         elif test.get("expect_tool") is None and "expect_tool" in test:
             if result.get("tools_used"):
                 issues.append(f"Expected no tool calls but got {result['tools_used']}")

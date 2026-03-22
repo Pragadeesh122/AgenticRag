@@ -3,7 +3,7 @@
 import json
 
 from clients import openai_client
-from prompts import QUERY_GENERATOR, JUDGE
+from prompts import get_query_generator_prompt, get_judge_prompt
 from test_suite.orchestrator import start_orchestrator, stop_orchestrator, send_prompt
 
 
@@ -14,7 +14,7 @@ def generate_test_queries(n: int = 5) -> list[str]:
         messages=[
             {
                 "role": "system",
-                "content": QUERY_GENERATOR,
+                "content": get_query_generator_prompt(),
             },
             {
                 "role": "user",
@@ -45,7 +45,7 @@ def judge_response(prompt: str, tools_used: list[str], actual_response: str) -> 
         messages=[
             {
                 "role": "system",
-                "content": JUDGE,
+                "content": get_judge_prompt(),
             },
             {
                 "role": "user",

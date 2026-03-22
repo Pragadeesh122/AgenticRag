@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: agenticrag-postgres
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${DB_NAME:-agenticrag}
+      POSTGRES_USER: ${DB_ADMIN_USER:-admin}
+      POSTGRES_PASSWORD: ${DB_ADMIN_PASSWORD}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./setup-reader.sh:/docker-entrypoint-initdb.d/02-setup-reader.sh
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
