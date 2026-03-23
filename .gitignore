@@ -28,3 +28,7 @@ data
 prompts
 test_reports
 browser_screenshots
+.claude
+.playwright-mcp
+screenshots
+test-screenshots

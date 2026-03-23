@@ -142,5 +142,9 @@ def end_session_with_memory(session_id: str) -> None:
 
 
 def _sse(event: str, data: str) -> str:
-    """Format a single SSE event."""
-    return f"event: {event}\ndata: {data}\n\n"
+    """Format a single SSE event.
+
+    Per SSE spec, multi-line data must use separate 'data:' lines.
+    """
+    data_lines = "\n".join(f"data: {line}" for line in data.split("\n"))
+    return f"event: {event}\n{data_lines}\n\n"
