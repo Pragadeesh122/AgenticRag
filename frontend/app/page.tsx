@@ -382,6 +382,7 @@ export default function Home() {
             messages={activeMessages}
             streamingMessageId={streamingMessageId}
             isLoading={isLoading}
+            isStreaming={streamingMessageId !== null}
             inputValue={inputValue}
             onInputChange={setInputValue}
             onSubmit={handleSubmit}

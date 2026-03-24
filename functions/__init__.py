@@ -29,7 +29,9 @@ def _discover_tools():
         func_name = schema["function"]["name"]
         func = getattr(module, func_name, None)
         if not func:
-            logger.warning(f"tool '{func_name}' has SCHEMA but no matching function in {module_name}.py")
+            logger.warning(
+                f"tool '{func_name}' has SCHEMA but no matching function in {module_name}.py"
+            )
             continue
 
         available_functions[func_name] = func

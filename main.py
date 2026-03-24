@@ -10,7 +10,7 @@ from prompts import ORCHESTRATOR
 logging.basicConfig(level=logging.INFO, format="%(name)s | %(message)s")
 logger = logging.getLogger("orchestrator")
 
-MAX_PROMPT_TOKENS = 5000
+MAX_PROMPT_TOKENS = 10000
 MAX_TOOL_CALLS = 3
 
 
@@ -54,9 +54,7 @@ def main():
                             "content": "You have reached the maximum number of tool calls. Do NOT attempt any more tool calls. Respond with the best answer you can based on the information you have gathered so far.",
                         }
                         messages.append(stop_msg)
-                        content, _, usage = stream_response(
-                            messages, use_tools=False
-                        )
+                        content, _, usage = stream_response(messages, use_tools=False)
                         messages.remove(stop_msg)
                         if usage:
                             prompt_tokens = usage.prompt_tokens
@@ -74,8 +72,7 @@ def main():
                 proxies = [ToolCallProxy(tc) for tc in tool_calls]
                 with ThreadPoolExecutor() as executor:
                     futures = {
-                        executor.submit(execute_tool_call, p): p
-                        for p in proxies
+                        executor.submit(execute_tool_call, p): p for p in proxies
                     }
                     results = []
                     for future in as_completed(futures):
