@@ -8,7 +8,7 @@ from functions.tool_router import execute_tool_call
 from utils.streaming import iter_response, ToolCallProxy
 from utils.summarizer import summarize_messages
 from memory import extract_and_save_memories
-from api.session import get_messages
+from api.session import get_messages, save_messages
 
 logger = logging.getLogger("api.chat")
 
@@ -115,6 +115,7 @@ def chat_stream(session_id: str, user_message: str):
         # Remove the failed user message
         if messages and messages[-1].get("role") == "user":
             messages.pop()
+        save_messages(session_id, messages)
         return
 
     messages.append({"role": "assistant", "content": full_content})
@@ -122,9 +123,10 @@ def chat_stream(session_id: str, user_message: str):
     # Summarize if token count is high
     if prompt_tokens > MAX_PROMPT_TOKENS:
         updated = summarize_messages(messages)
-        # Replace in-place so the session dict stays current
         messages.clear()
         messages.extend(updated)
+
+    save_messages(session_id, messages)
 
     yield _sse(
         "done",
