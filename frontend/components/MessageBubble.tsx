@@ -151,12 +151,17 @@ function fixCodeBlocks(text: string): string {
         .replace(/(}\);)\s*([a-zA-Z\/])/g, "$1\n$2")
         // Split after closing } followed by a keyword
         .replace(/(})\s*((?:from|import|class|def|const|let|var|function|export|async|func|fn|pub|http|app)\s)/g, "$1\n$2")
-        // Split before opening { that starts a block after ) =>
-        .replace(/(\) => \{)([a-zA-Z])/g, "$1\n  $2")
+        // Split block body after => { or ) { when followed by code
+        .replace(/((?:\) =>|=>|\))\s*\{)\s*([a-zA-Z])/g, "$1\n  $2")
         // Split after semicolons followed by code (statement boundaries)
         .replace(/(;)\s*([a-zA-Z\/])/g, "$1\n$2")
         // Split before closing } after a statement (e.g. "next(); })" or "return x; }")
-        .replace(/(;)\s*(}\)?;?)/g, "$1\n$2");
+        .replace(/(;)\s*(}\)?;?)/g, "$1\n$2")
+        // Split Python type-hint fields: "str name:" or "float price:" or "int quantity:"
+        .replace(/\b(str|int|float|bool|bytes|None|Any|Optional|List|Dict|Set|Tuple|list|dict|set|tuple)(\s*(?:\[.*?\])?\s+)([a-z_]\w*\s*[=:])/g, "$1\n$3")
+        // Split bash commands concatenated together (e.g. "pip install foobarcmd --flag")
+        .replace(/\b(pip install [^\n]+?)((?:python|python3|uvicorn|node|npm|npx|cargo|go run|java|ruby|perl|dotnet)\s)/g, "$1\n$2")
+        .replace(/\b(npm (?:install|init)[^\n]*?)((?:node|npx|npm run|npm start)\s)/g, "$1\n$2");
 
       // Phase 2: Add indentation based on block structure
       // Phase 3: Insert blank lines between logical sections
@@ -186,8 +191,8 @@ function normalizeMarkdown(text: string): string {
     .replace(/([^\n])(- \*\*)/g, "$1\n$2")
     // Newline after colon followed by "- " (list after label)
     .replace(/:- /g, ":\n- ")
-    // Newline between adjacent plain list items after sentence-ending punctuation
-    .replace(/([.!?])- /g, "$1\n- ")
+    // Newline between adjacent plain list items after punctuation
+    .replace(/([.!?,;])- /g, "$1\n- ")
     // Split "text- Item" patterns (letter/digit/paren before dash = likely new list item)
     .replace(/([a-zA-Z0-9)\]])- /g, "$1\n- ")
     // Split concatenated numbered list items: "step1. Next" or "step2. Another"
