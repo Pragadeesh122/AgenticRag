@@ -326,7 +326,7 @@ export default function Home() {
   }, [inputValue, isLoading, activeSessionId, sessions, updateMessages]);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#111111] text-zinc-100">
+    <div className="flex h-screen w-screen overflow-hidden bg-[#1a1a1a] text-zinc-100">
       {/* Sidebar */}
       <div
         className={`shrink-0 transition-all duration-200 ease-in-out overflow-hidden ${

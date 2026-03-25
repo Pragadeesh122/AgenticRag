@@ -105,7 +105,7 @@ export default function Sidebar({
 
   return (
     <aside
-      className="flex flex-col h-full bg-[#1a1a1a] border-r border-white/6"
+      className="flex flex-col h-full bg-[#1e1e1e] border-r border-white/6"
       aria-label="Chat sessions"
     >
       {/* Header */}
