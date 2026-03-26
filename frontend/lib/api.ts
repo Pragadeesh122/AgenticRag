@@ -1,7 +1,9 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import type { Session, Message } from './types';
 
-export async function createSession(): Promise<string> {
-  const res = await fetch(`${BASE_URL}/session`, {
+// ─── Python backend (proxied through Next.js API routes) ───
+
+export async function createBackendSession(): Promise<string> {
+  const res = await fetch('/api/chat/backend-session', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
   });
@@ -10,8 +12,8 @@ export async function createSession(): Promise<string> {
   return data.session_id;
 }
 
-export async function deleteSession(sessionId: string): Promise<void> {
-  await fetch(`${BASE_URL}/session/${sessionId}`, { method: 'DELETE' });
+export async function deleteBackendSession(sessionId: string): Promise<void> {
+  await fetch(`/api/chat/backend-session/${sessionId}`, { method: 'DELETE' });
 }
 
 export type SSEEvent =
@@ -26,10 +28,10 @@ export async function streamChat(
   onEvent: (event: SSEEvent) => void,
   signal?: AbortSignal
 ): Promise<void> {
-  const res = await fetch(`${BASE_URL}/chat`, {
+  const res = await fetch('/api/chat/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: sessionId, message }),
+    body: JSON.stringify({ sessionId, message }),
     signal,
   });
 
@@ -47,7 +49,6 @@ export async function streamChat(
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
 
-    // SSE events are separated by double newlines
     const parts = buffer.split('\n\n');
     buffer = parts.pop() ?? '';
 
@@ -65,7 +66,6 @@ export async function streamChat(
       }
 
       const eventData = dataLines.join('\n');
-
       if (!eventType || dataLines.length === 0) continue;
 
       if (eventType === 'token') {
@@ -87,4 +87,58 @@ export async function streamChat(
       }
     }
   }
+}
+
+// ─── Next.js API routes (DB-backed sessions + messages) ───
+
+export async function fetchSessions(): Promise<Session[]> {
+  const res = await fetch('/api/chat/sessions');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function createChatSession(title?: string): Promise<Session> {
+  const res = await fetch('/api/chat/sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) throw new Error('Failed to create chat session');
+  return res.json();
+}
+
+export async function updateChatSession(
+  id: string,
+  data: { title?: string; backendSessionId?: string }
+): Promise<void> {
+  await fetch(`/api/chat/sessions/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteChatSession(
+  id: string
+): Promise<{ backendSessionId: string | null }> {
+  const res = await fetch(`/api/chat/sessions/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete session');
+  return res.json();
+}
+
+export async function fetchMessages(sessionId: string): Promise<Message[]> {
+  const res = await fetch(`/api/chat/sessions/${sessionId}/messages`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function saveMessages(
+  sessionId: string,
+  messages: Array<{ role: string; content: string; toolCalls?: unknown[] }>
+): Promise<void> {
+  await fetch(`/api/chat/sessions/${sessionId}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(messages),
+  });
 }

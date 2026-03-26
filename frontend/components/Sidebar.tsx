@@ -11,7 +11,6 @@ function groupSessionsByTime(sessions: Session[]): {
   yesterday: Session[];
   older: Session[];
 } {
-  const now = Date.now();
   const oneDayMs = 24 * 60 * 60 * 1000;
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
@@ -21,19 +20,20 @@ function groupSessionsByTime(sessions: Session[]): {
   const yesterday: Session[] = [];
   const older: Session[] = [];
 
-  const sorted = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
+  const sorted = [...sessions].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  );
 
   for (const s of sorted) {
-    if (s.updatedAt >= startOfToday.getTime()) {
+    const ts = new Date(s.updatedAt).getTime();
+    if (ts >= startOfToday.getTime()) {
       today.push(s);
-    } else if (s.updatedAt >= startOfYesterday.getTime()) {
+    } else if (ts >= startOfYesterday.getTime()) {
       yesterday.push(s);
     } else {
       older.push(s);
     }
   }
-  // avoid unused warning
-  void now;
 
   return { today, yesterday, older };
 }

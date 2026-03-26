@@ -9,9 +9,15 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@auth/prisma-adapter": "^2.11.1",
     "@phosphor-icons/react": "^2.1.10",
+    "@prisma/adapter-pg": "^7.5.0",
+    "@prisma/client": "^7.5.0",
     "@streamdown/code": "^1.1.1",
+    "dotenv": "^17.3.1",
     "next": "16.2.1",
+    "next-auth": "^5.0.0-beta.30",
+    "pg": "^8.20.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-markdown": "^10.1.0",
@@ -22,10 +28,12 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "25.5.0",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
+    "prisma": "^7.5.0",
     "tailwindcss": "^4",
     "typescript": "^5.9.3"
   }

@@ -15,13 +15,13 @@ export interface Message {
   role: MessageRole;
   content: string;
   toolCalls: ToolCall[];
-  createdAt: number;
+  createdAt: string; // ISO string from DB
 }
 
 export interface Session {
   id: string;
-  sessionId: string;
+  backendSessionId: string | null;
   title: string;
-  createdAt: number;
-  updatedAt: number;
+  createdAt: string; // ISO string from DB
+  updatedAt: string;
 }
