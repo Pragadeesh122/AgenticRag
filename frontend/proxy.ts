@@ -14,5 +14,7 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api|auth|_next/static|_next/image|favicon.ico).*)"],
+  // Exclude the homepage (/), auth routes, static assets, and API routes
+  // so the landing page is publicly accessible
+  matcher: ["/((?!$|api|auth|_next/static|_next/image|favicon.ico).+)"],
 };

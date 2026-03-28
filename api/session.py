@@ -6,6 +6,7 @@ import logging
 from memory import get_user_memory
 from memory.redis_client import redis_client
 from prompts import ORCHESTRATOR
+from prompts.project_chat import PROJECT_CHAT
 
 logger = logging.getLogger("session")
 
@@ -35,6 +36,25 @@ def create_session() -> str:
         ex=SESSION_TTL,
     )
     logger.info(f"created session {session_id}")
+    return session_id
+
+
+def create_project_session(project_name: str = "") -> str:
+    """Create a session scoped to a project (RAG context, no tools)."""
+    session_id = uuid.uuid4().hex[:12]
+    system_prompt = PROJECT_CHAT
+    if project_name:
+        system_prompt += f"\n\nYou are answering questions about the project: **{project_name}**\n"
+    user_memory = get_user_memory()
+    if user_memory:
+        system_prompt += f"\nKnown facts about the user:\n{user_memory}"
+    messages = [{"role": "system", "content": system_prompt}]
+    redis_client.set(
+        _session_key(session_id),
+        json.dumps(messages),
+        ex=SESSION_TTL,
+    )
+    logger.info(f"created project session {session_id}")
     return session_id
 
 
