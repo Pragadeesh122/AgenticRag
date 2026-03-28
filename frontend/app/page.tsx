@@ -1,21 +1,21 @@
 import { auth } from "@/auth";
-import { redirect } from "next/navigation";
 import ChatPage from "@/components/ChatPage";
+import LandingPage from "@/components/LandingPage";
 
 export default async function Home() {
   const session = await auth();
 
-  if (!session?.user) {
-    redirect("/auth/signin");
+  if (session?.user) {
+    return (
+      <ChatPage
+        user={{
+          name: session.user.name,
+          email: session.user.email,
+          image: session.user.image,
+        }}
+      />
+    );
   }
 
-  return (
-    <ChatPage
-      user={{
-        name: session.user.name,
-        email: session.user.email,
-        image: session.user.image,
-      }}
-    />
-  );
+  return <LandingPage />;
 }

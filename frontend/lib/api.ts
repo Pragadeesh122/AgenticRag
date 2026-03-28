@@ -1,4 +1,4 @@
-import type { Session, Message } from './types';
+import type { Session, Message, Project, ProjectDocument, RetrievalSource, AgentInfo } from './types';
 
 // ─── Python backend (proxied through Next.js API routes) ───
 
@@ -19,8 +19,10 @@ export async function deleteBackendSession(sessionId: string): Promise<void> {
 export type SSEEvent =
   | { type: 'token'; data: string }
   | { type: 'tool'; data: { name: string } }
+  | { type: 'agent'; data: { name: string; description: string } }
+  | { type: 'retrieval'; data: { sources: RetrievalSource[]; count: number } }
   | { type: 'error'; data: string }
-  | { type: 'done'; data: { tools_used: string[]; prompt_tokens: number } };
+  | { type: 'done'; data: { tools_used?: string[]; sources_used?: number; agent?: string; structured?: boolean; prompt_tokens: number } };
 
 export async function streamChat(
   sessionId: string,
@@ -75,6 +77,12 @@ export async function streamChat(
           onEvent({ type: 'tool', data: JSON.parse(eventData) });
         } catch {
           // ignore malformed tool event
+        }
+      } else if (eventType === 'retrieval') {
+        try {
+          onEvent({ type: 'retrieval', data: JSON.parse(eventData) });
+        } catch {
+          // ignore malformed retrieval event
         }
       } else if (eventType === 'error') {
         onEvent({ type: 'error', data: eventData });
@@ -141,4 +149,204 @@ export async function saveMessages(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(messages),
   });
+}
+
+// ─── Projects API ───
+
+export async function fetchProjects(): Promise<Project[]> {
+  const res = await fetch('/api/projects');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function createProject(name: string, description?: string): Promise<Project> {
+  const res = await fetch('/api/projects', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, description }),
+  });
+  if (!res.ok) throw new Error('Failed to create project');
+  return res.json();
+}
+
+export async function fetchProject(id: string): Promise<Project> {
+  const res = await fetch(`/api/projects/${id}`);
+  if (!res.ok) throw new Error('Failed to fetch project');
+  return res.json();
+}
+
+export async function updateProject(
+  id: string,
+  data: { name?: string; description?: string; status?: string }
+): Promise<void> {
+  await fetch(`/api/projects/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+}
+
+export async function uploadDocument(
+  projectId: string,
+  file: File
+): Promise<ProjectDocument> {
+  // 1. Create DB record + get presigned URL (Next.js → Python presign)
+  const initRes = await fetch(`/api/projects/${projectId}/upload`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename: file.name, fileSize: file.size }),
+  });
+  if (!initRes.ok) {
+    const err = await initRes.json().catch(() => ({ error: 'Upload failed' }));
+    throw new Error(err.error || 'Upload failed');
+  }
+
+  const { uploadUrl, ...document } = await initRes.json();
+
+  // 2. Upload file directly to MinIO (no middleman)
+  const uploadRes = await fetch(uploadUrl, {
+    method: 'PUT',
+    body: file,
+    headers: { 'Content-Type': 'application/octet-stream' },
+  });
+  if (!uploadRes.ok) {
+    throw new Error('Direct upload to storage failed');
+  }
+
+  // 3. Confirm upload + trigger ingestion (same route, PUT)
+  const confirmRes = await fetch(`/api/projects/${projectId}/upload`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ documentId: document.id, filename: file.name }),
+  });
+  if (!confirmRes.ok) {
+    throw new Error('Failed to trigger ingestion');
+  }
+
+  return { ...document, status: 'processing' } as ProjectDocument;
+}
+
+export async function deleteDocument(projectId: string, docId: string): Promise<void> {
+  await fetch(`/api/projects/${projectId}/documents/${docId}`, { method: 'DELETE' });
+}
+
+export async function pollDocumentStatus(
+  projectId: string,
+  docId: string
+): Promise<{ status: string; chunkCount: number; chunkStrategy: string | null; errorMessage: string | null }> {
+  const res = await fetch(`/api/projects/${projectId}/documents/${docId}/status`);
+  if (!res.ok) throw new Error('Failed to get document status');
+  return res.json();
+}
+
+// ─── Project Chat ───
+
+export async function fetchProjectSessions(projectId: string): Promise<Session[]> {
+  const res = await fetch(`/api/projects/${projectId}/sessions`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function createProjectSession(
+  projectId: string
+): Promise<Session> {
+  const res = await fetch(`/api/projects/${projectId}/session`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error('Failed to create project session');
+  return res.json();
+}
+
+export async function deleteProjectSession(
+  projectId: string,
+  sessionId: string
+): Promise<void> {
+  await fetch(`/api/projects/${projectId}/session/${sessionId}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function fetchAgents(): Promise<AgentInfo[]> {
+  const res = await fetch('/api/projects/agents');
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function streamProjectChat(
+  projectId: string,
+  sessionId: string,
+  message: string,
+  onEvent: (event: SSEEvent) => void,
+  agent?: string | null,
+  signal?: AbortSignal
+): Promise<void> {
+  const res = await fetch(`/api/projects/${projectId}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId, message, agent: agent || null }),
+    signal,
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Project chat failed: ${res.status} ${text}`);
+  }
+
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const parts = buffer.split('\n\n');
+    buffer = parts.pop() ?? '';
+
+    for (const part of parts) {
+      const lines = part.trim().split('\n');
+      let eventType = '';
+      const dataLines: string[] = [];
+
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7).trim();
+        } else if (line.startsWith('data: ')) {
+          dataLines.push(line.slice(6));
+        }
+      }
+
+      const eventData = dataLines.join('\n');
+      if (!eventType || dataLines.length === 0) continue;
+
+      if (eventType === 'token') {
+        onEvent({ type: 'token', data: eventData });
+      } else if (eventType === 'agent') {
+        try {
+          onEvent({ type: 'agent', data: JSON.parse(eventData) });
+        } catch {
+          // ignore
+        }
+      } else if (eventType === 'retrieval') {
+        try {
+          onEvent({ type: 'retrieval', data: JSON.parse(eventData) });
+        } catch {
+          // ignore
+        }
+      } else if (eventType === 'error') {
+        onEvent({ type: 'error', data: eventData });
+      } else if (eventType === 'done') {
+        try {
+          onEvent({ type: 'done', data: JSON.parse(eventData) });
+        } catch {
+          onEvent({ type: 'done', data: { sources_used: 0, prompt_tokens: 0 } });
+        }
+      }
+    }
+  }
 }

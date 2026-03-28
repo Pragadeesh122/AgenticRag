@@ -5,6 +5,7 @@
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-serif: var(--font-serif);
 
   /* Shadcn-compatible color tokens for Tailwind utilities (bg-sidebar, border-border, etc.) */
   --color-background: #111111;
@@ -12,8 +13,8 @@
   --color-muted: #1e1e22;
   --color-muted-foreground: #a1a1aa;
   --color-border: rgba(255, 255, 255, 0.1);
-  --color-primary: #a78bfa;
-  --color-primary-foreground: #111111;
+  --color-primary: #10b981;
+  --color-primary-foreground: #fff;
   --color-sidebar: #161618;
   --color-sidebar-foreground: #e4e4e7;
 }
@@ -66,7 +67,7 @@ textarea:focus {
 
 /* Smooth caret in textarea */
 textarea {
-  caret-color: #a78bfa;
+  caret-color: #10b981;
 }
 
 /* Spin animation for loading icons */
@@ -144,9 +145,9 @@ textarea {
 
 /* ─── Chat prose: markdown rendering styles ─── */
 
-/* Streaming cursor — Claude-style blinking block caret */
+/* Streaming cursor — blinking block caret */
 .chat-prose [style*="--streamdown-caret"] {
-  --streamdown-caret: #a78bfa !important;
+  --streamdown-caret: #10b981 !important;
 }
 
 /* Base typography */
@@ -201,15 +202,15 @@ textarea {
 
 /* Links */
 .chat-prose a {
-  color: #a78bfa;
+  color: #10b981;
   text-decoration: underline;
   text-underline-offset: 2px;
-  text-decoration-color: rgba(167, 139, 250, 0.3);
+  text-decoration-color: rgba(16, 185, 129, 0.3);
   transition: text-decoration-color 0.15s;
 }
 
 .chat-prose a:hover {
-  text-decoration-color: #a78bfa;
+  text-decoration-color: #10b981;
 }
 
 /* Bold and italic */
@@ -344,8 +345,8 @@ textarea {
 
 /* Blockquotes */
 .chat-prose blockquote {
-  border-left: 3px solid #a78bfa;
-  background: rgba(167, 139, 250, 0.05);
+  border-left: 3px solid #10b981;
+  background: rgba(16, 185, 129, 0.05);
   padding: 0.5rem 1rem;
   margin: 0.75rem 0;
   border-radius: 0 0.5rem 0.5rem 0;
@@ -417,4 +418,144 @@ textarea {
 /* Override Streamdown's default spacing that's too aggressive */
 .chat-prose > div > *:first-child {
   margin-top: 0 !important;
+}
+
+/* ─── Landing page animations ─── */
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-12px); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes lineGrow {
+  from { width: 0; opacity: 0; }
+  to { width: 100%; opacity: 1; }
+}
+
+@keyframes dotPulse {
+  0%, 100% { transform: scale(1); opacity: 0.6; }
+  50% { transform: scale(1.4); opacity: 1; }
+}
+
+@keyframes typewriter {
+  from { width: 0; }
+  to { width: 100%; }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    #10b981 0%,
+    #34d399 25%,
+    #6ee7b7 50%,
+    #34d399 75%,
+    #10b981 100%
+  );
+  background-size: 200% auto;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 4s linear infinite;
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.7s ease-out forwards;
+}
+
+.animate-fade-in-scale {
+  animation: fadeInScale 0.8s ease-out forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 3s ease-in-out infinite;
+}
+
+.animate-gradient-shift {
+  background-size: 200% 200%;
+  animation: gradientShift 6s ease infinite;
+}
+
+.animate-dot-pulse {
+  animation: dotPulse 1.4s ease-in-out infinite;
+}
+
+/* ─── Landing page interactive styles ─── */
+
+.lp-nav-signin {
+  color: rgba(255, 255, 255, 0.38);
+  transition: color 0.15s;
+}
+.lp-nav-signin:hover {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.lp-btn-primary {
+  background: #10b981;
+  transition: background 0.15s, transform 0.15s;
+}
+.lp-btn-primary:hover {
+  background: #0ea272;
+  transform: translateY(-1px);
+}
+
+.lp-btn-ghost {
+  color: rgba(255, 255, 255, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  transition: color 0.15s, border-color 0.15s;
+}
+.lp-btn-ghost:hover {
+  color: rgba(255, 255, 255, 0.75);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* Landing page card hover glow */
+.card-glow {
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.card-glow:hover {
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.15), 0 8px 32px rgba(16, 185, 129, 0.06);
+  border-color: rgba(16, 185, 129, 0.18);
 }
