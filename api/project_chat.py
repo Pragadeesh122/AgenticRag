@@ -12,7 +12,7 @@ from agents.router import route as route_agent
 
 logger = logging.getLogger("api.project_chat")
 
-MAX_PROMPT_TOKENS = 5000
+MAX_PROMPT_TOKENS = 10000
 
 
 def project_chat_stream(
@@ -22,30 +22,15 @@ def project_chat_stream(
     chunk_count: int = 0,
     agent_name: str | None = None,
 ):
-    """Generator that yields SSE events for a project-scoped chat turn.
-
-    Flow:
-    1. Route to the right agent (explicit or auto-classified)
-    2. Retrieve relevant chunks with agent-specific config
-    3. Inject context + agent instructions into the conversation
-    4. Stream the LLM response
-
-    Event types:
-        agent     — which agent was selected
-        retrieval — retrieved sources
-        token     — a chunk of the assistant's text response
-        error     — something went wrong
-        done      — final event with metadata
-    """
+    """Generator that yields SSE events for a project-scoped chat turn."""
     messages = get_messages(session_id)
 
-    # 1. Route to agent
-    agent = route_agent(user_message, agent_name)
+    # 1. Route to agent (pass full conversation for context-aware classification)
+    agent = route_agent(user_message, agent_name, messages)
     yield _sse("agent", json.dumps({"name": agent.name, "description": agent.description}))
     logger.info(f"using agent: {agent.name}")
 
-    # Swap in the agent's system prompt if this is the first turn
-    # or if the agent changed
+    # Always set the agent's system prompt
     if messages and messages[0].get("role") == "system":
         messages[0]["content"] = agent.system_prompt
 

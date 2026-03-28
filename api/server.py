@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from api.session import create_session, delete_session
+from api.session import create_session, delete_session, restore_session, session_exists
 from api.chat import chat_stream, end_session_with_memory
 from api.projects import router as projects_router
 
@@ -29,6 +29,11 @@ class ChatRequest(BaseModel):
     message: str
 
 
+class RestoreRequest(BaseModel):
+    session_id: str
+    messages: list[dict]
+
+
 @app.post("/session")
 def new_session():
     """Create a new conversation session."""
@@ -46,6 +51,19 @@ def chat(req: ChatRequest):
         )
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
+
+
+@app.get("/session/{session_id}/exists")
+def check_session(session_id: str):
+    """Check if a session exists in Redis."""
+    return {"exists": session_exists(session_id)}
+
+
+@app.post("/session/restore")
+def restore(req: RestoreRequest):
+    """Restore a Redis session from persisted messages."""
+    restore_session(req.session_id, req.messages)
+    return {"status": "restored", "session_id": req.session_id}
 
 
 @app.delete("/session/{session_id}")

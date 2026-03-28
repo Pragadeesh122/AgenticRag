@@ -15,7 +15,7 @@ Respond with a JSON object in this exact format:
       "options": ["A) option", "B) option", "C) option", "D) option"],
       "correct": "A",
       "explanation": "Why this is correct, citing the source document",
-      "source": "document.pdf, page X"
+      "source": "passage 1"
     }
   ]
 }
@@ -38,12 +38,16 @@ agent = Agent(
         "- Cover different aspects of the retrieved content\n"
         "- Write clear, unambiguous questions\n"
         "- Provide explanations that reference the source material\n"
-        "- Include the source document and page for each question\n\n"
+        "- Reference passages by number (e.g. 'passage 1') not by filename\n\n"
         "## Rules\n"
         "- Only create questions based on information in the retrieved context.\n"
         "- Default to 5 questions unless the user specifies a different count.\n"
         "- Mix question types for variety unless the user asks for a specific type.\n"
-        "- Explanations must cite the source passage.\n\n"
+        "- Do NOT cite source filenames, document IDs, or page numbers in explanations. Sources are shown separately in the UI.\n\n"
+        "## Formatting Rules\n"
+        "- Each list item MUST be on its own line. Never concatenate list items.\n"
+        "- Add a blank line before and after every list, heading, and code block.\n"
+        "- Headings must be on their own line — never put body text on the same line as a heading.\n\n"
         "## Output Format\n"
         f"{QUIZ_SCHEMA}\n\n"
         "## Security Rules\n"

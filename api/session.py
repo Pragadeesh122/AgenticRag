@@ -58,6 +58,11 @@ def create_project_session(project_name: str = "") -> str:
     return session_id
 
 
+def session_exists(session_id: str) -> bool:
+    """Check if a session exists in Redis."""
+    return redis_client.exists(_session_key(session_id)) > 0
+
+
 def get_messages(session_id: str) -> list[dict]:
     data = redis_client.get(_session_key(session_id))
     if data is None:
@@ -74,6 +79,33 @@ def save_messages(session_id: str, messages: list[dict]) -> None:
     )
 
 
+def restore_session(session_id: str, messages: list[dict]) -> None:
+    """Recreate a Redis session from persisted messages (e.g. from DB)."""
+    # Build system prompt + filter to user/assistant messages only
+    system_prompt = _build_system_prompt()
+    restored = [{"role": "system", "content": system_prompt}]
+    for msg in messages:
+        if msg.get("role") in ("user", "assistant") and msg.get("content"):
+            restored.append({"role": msg["role"], "content": msg["content"]})
+    redis_client.set(
+        _session_key(session_id),
+        json.dumps(restored),
+        ex=SESSION_TTL,
+    )
+    logger.info(f"restored session {session_id} with {len(restored)} messages")
+
+
+def get_session_agent(session_id: str) -> str | None:
+    """Get the active agent name for a session."""
+    return redis_client.get(f"{_session_key(session_id)}:agent")
+
+
+def set_session_agent(session_id: str, agent_name: str) -> None:
+    """Store the active agent name for a session."""
+    redis_client.set(f"{_session_key(session_id)}:agent", agent_name, ex=SESSION_TTL)
+
+
 def delete_session(session_id: str) -> None:
     redis_client.delete(_session_key(session_id))
+    redis_client.delete(f"{_session_key(session_id)}:agent")
     logger.info(f"deleted session {session_id}")
