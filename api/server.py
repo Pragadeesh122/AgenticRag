@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from api.session import create_session, delete_session
 from api.chat import chat_stream, end_session_with_memory
+from api.projects import router as projects_router
 
 logging.basicConfig(level=logging.INFO, format="%(name)s | %(message)s")
 
@@ -19,6 +20,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(projects_router)
 
 
 class ChatRequest(BaseModel):
