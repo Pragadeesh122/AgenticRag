@@ -6,6 +6,8 @@ import {code} from "@streamdown/code";
 import "streamdown/styles.css";
 import type {Message} from "@/lib/types";
 import ToolIndicator from "./ToolIndicator";
+import QuizRenderer, {tryParseQuiz} from "./QuizRenderer";
+import ChartRenderer, {tryParseChart} from "./ChartRenderer";
 
 const streamdownPlugins = {code};
 
@@ -255,9 +257,20 @@ export default function MessageBubble({
 }: MessageBubbleProps) {
   const isUser = message.role === "user";
 
+  const isStructuredAgent =
+    !isUser &&
+    (message.agentName === "quiz" || message.agentName === "visualization");
+
+  const structuredType = useMemo(() => {
+    if (isUser || isStreaming || !message.content) return null;
+    if (message.agentName === "quiz" && tryParseQuiz(message.content)) return "quiz";
+    if (message.agentName === "visualization" && tryParseChart(message.content)) return "chart";
+    return null;
+  }, [isUser, isStreaming, message.content, message.agentName]);
+
   const normalizedContent = useMemo(
-    () => normalizeMarkdown(message.content),
-    [message.content]
+    () => structuredType ? "" : normalizeMarkdown(message.content),
+    [message.content, structuredType]
   );
 
   return (
@@ -285,6 +298,17 @@ export default function MessageBubble({
             <p className='whitespace-pre-wrap wrap-break-word'>
               {message.content}
             </p>
+          ) : isStructuredAgent && isStreaming ? (
+            <div className='flex items-center gap-2 py-2'>
+              <span className='w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse' />
+              <span className='text-sm text-zinc-400'>
+                Generating {message.agentName === "quiz" ? "quiz" : "visualization"}...
+              </span>
+            </div>
+          ) : structuredType === "quiz" ? (
+            <QuizRenderer content={message.content} />
+          ) : structuredType === "chart" ? (
+            <ChartRenderer content={message.content} />
           ) : (
             <div className='chat-prose'>
               <Streamdown

@@ -245,6 +245,7 @@ export default function ProjectPage({projectId, user}: ProjectPageProps) {
     if (!content || isLoading || !project) return;
 
     let sessionId = activeSessionId;
+    let currentSession = sessions.find((s) => s.id === sessionId);
 
     // Create a new project session if none is active
     if (!sessionId) {
@@ -255,6 +256,7 @@ export default function ProjectPage({projectId, user}: ProjectPageProps) {
         loadedSessionsRef.current.add(newSession.id);
         setActiveSessionId(newSession.id);
         sessionId = newSession.id;
+        currentSession = newSession;
       } catch (err) {
         console.error("Failed to create project session:", err);
         return;
@@ -262,9 +264,6 @@ export default function ProjectPage({projectId, user}: ProjectPageProps) {
     }
 
     const currentSessionId = sessionId;
-
-    // Find the backend session ID for this chat session
-    const currentSession = sessions.find((s) => s.id === currentSessionId);
     const backendSessionId = currentSession?.backendSessionId;
 
     if (!backendSessionId) {
@@ -336,7 +335,7 @@ export default function ProjectPage({projectId, user}: ProjectPageProps) {
             updateMessages(currentSessionId, (prev) =>
               prev.map((m) =>
                 m.id === assistantId
-                  ? {...m, toolCalls: [...m.toolCalls, agentTool]}
+                  ? {...m, agentName: event.data.name, toolCalls: [...m.toolCalls, agentTool]}
                   : m
               )
             );

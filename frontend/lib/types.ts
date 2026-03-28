@@ -16,6 +16,7 @@ export interface Message {
   content: string;
   toolCalls: ToolCall[];
   createdAt: string; // ISO string from DB
+  agentName?: string; // set for project agent responses (quiz, visualization, etc.)
 }
 
 export interface Session {
