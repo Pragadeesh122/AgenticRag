@@ -24,6 +24,7 @@ __pycache__/
 
 results*
 data
+uploads/
 
 # Auth DB — contains hardcoded credentials
 auth-db/

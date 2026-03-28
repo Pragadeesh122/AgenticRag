@@ -18,4 +18,10 @@ dependencies = [
     "faker>=40.11.0",
     "fastapi>=0.115.0",
     "uvicorn>=0.34.0",
+    "pymupdf>=1.27.2.2",
+    "pymupdf4llm>=1.27.2.2",
+    "python-docx>=1.2.0",
+    "pinecone-text>=0.11.0",
+    "python-multipart>=0.0.22",
+    "minio>=7.2.20",
 ]
