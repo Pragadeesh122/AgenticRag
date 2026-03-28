@@ -16,6 +16,7 @@ model User {
   accounts      Account[]
   sessions      Session[]
   chatSessions  ChatSession[]
+  projects      Project[]
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 }
@@ -59,14 +60,17 @@ model VerificationToken {
 model ChatSession {
   id              String        @id @default(cuid())
   userId          String
+  projectId       String?       // null = general chat, set = project-scoped chat
   backendSessionId String?      // Redis session ID from the Python backend
   title           String        @default("New chat")
   user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project         Project?      @relation(fields: [projectId], references: [id], onDelete: Cascade)
   messages        ChatMessage[]
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
   @@index([userId, updatedAt(sort: Desc)])
+  @@index([projectId])
 }
 
 model ChatMessage {
@@ -79,4 +83,37 @@ model ChatMessage {
   createdAt     DateTime    @default(now())
 
   @@index([chatSessionId, createdAt])
+}
+
+// ─── Project models (RAG pipeline) ───
+
+model Project {
+  id          String     @id @default(cuid())
+  userId      String
+  name        String
+  description String?    @db.Text
+  status      String     @default("active") // active | archived
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents    Document[]
+  chatSessions ChatSession[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([userId, updatedAt(sort: Desc)])
+}
+
+model Document {
+  id            String   @id @default(cuid())
+  projectId     String
+  filename      String
+  fileType      String   // pdf, txt, md, csv, docx
+  fileSize      Int
+  chunkCount    Int      @default(0)
+  chunkStrategy String?  // recursive, semantic, fixed
+  status        String   @default("uploading") // uploading | processing | ready | failed
+  errorMessage  String?  @db.Text
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+
+  @@index([projectId, createdAt])
 }
