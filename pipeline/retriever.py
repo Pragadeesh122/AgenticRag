@@ -16,11 +16,11 @@ def get_retrieval_config(chunk_count: int) -> dict:
     - Large (> 10K): hybrid + rerank candidates
     """
     if chunk_count < 500:
-        return {"alpha": 1.0, "top_k": 10, "rerank": False}
+        return {"alpha": 1.0, "top_k": 5, "rerank": False}
     elif chunk_count < 10000:
-        return {"alpha": 0.7, "top_k": 20, "rerank": False}
+        return {"alpha": 0.7, "top_k": 10, "rerank": False}
     else:
-        return {"alpha": 0.5, "top_k": 40, "rerank": True}
+        return {"alpha": 0.5, "top_k": 20, "rerank": True}
 
 
 def retrieve(
@@ -45,7 +45,9 @@ def retrieve(
     # Check retrieval cache first
     cached = get_cached_retrieval(project_id, query)
     if cached is not None:
-        logger.info(f"using cached retrieval for project '{project_id}' ({len(cached)} results)")
+        logger.info(
+            f"using cached retrieval for project '{project_id}' ({len(cached)} results)"
+        )
         return cached
 
     config = get_retrieval_config(chunk_count)

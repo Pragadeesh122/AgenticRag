@@ -63,7 +63,7 @@ def query_vectors(
     project_id: str,
     dense_vector: list[float],
     sparse_vector: dict | None = None,
-    top_k: int = 10,
+    top_k: int = 5,
     alpha: float = 1.0,
 ) -> list[dict]:
     """Query the project namespace with optional hybrid weighting.
