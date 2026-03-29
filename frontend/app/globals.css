@@ -17,6 +17,16 @@
   --color-primary-foreground: #fff;
   --color-sidebar: #161618;
   --color-sidebar-foreground: #e4e4e7;
+
+  /* Landing page semantic text levels (light theme) */
+  --color-lp-text: #0a0a0a;
+  --color-lp-text-secondary: #525252;
+  --color-lp-text-muted: #9ca3af;
+  --color-lp-text-faint: #d1d5db;
+  --color-lp-accent: #10b981;
+  --color-lp-surface: #f7f7f8;
+  --color-lp-border: #e5e7eb;
+  --color-lp-border-subtle: #f0f0f1;
 }
 
 * {
@@ -28,7 +38,6 @@ body {
   height: 100%;
   margin: 0;
   padding: 0;
-  background: #1a1a1a;
   color: #e4e4e7;
   font-family: var(--font-geist-sans), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -524,38 +533,29 @@ textarea {
 /* ─── Landing page interactive styles ─── */
 
 .lp-nav-signin {
-  color: rgba(255, 255, 255, 0.38);
+  color: #6b7280;
   transition: color 0.15s;
 }
 .lp-nav-signin:hover {
-  color: rgba(255, 255, 255, 0.72);
+  color: #111;
 }
 
 .lp-btn-primary {
-  background: #10b981;
+  background: #0a0a0a;
   transition: background 0.15s, transform 0.15s;
 }
 .lp-btn-primary:hover {
-  background: #0ea272;
+  background: #1a1a1a;
   transform: translateY(-1px);
 }
 
 .lp-btn-ghost {
-  color: rgba(255, 255, 255, 0.45);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  transition: color 0.15s, border-color 0.15s;
+  color: #525252;
+  border: 1px solid #e5e7eb;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 .lp-btn-ghost:hover {
-  color: rgba(255, 255, 255, 0.75);
-  border-color: rgba(255, 255, 255, 0.18);
-}
-
-/* Landing page card hover glow */
-.card-glow {
-  transition: box-shadow 0.3s ease, border-color 0.3s ease;
-}
-
-.card-glow:hover {
-  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.15), 0 8px 32px rgba(16, 185, 129, 0.06);
-  border-color: rgba(16, 185, 129, 0.18);
+  color: #111;
+  border-color: #d1d5db;
+  background: #f7f7f8;
 }

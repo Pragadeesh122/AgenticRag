@@ -9,12 +9,10 @@ import {SignOut} from "@phosphor-icons/react/dist/ssr/SignOut";
 import ProjectSidebar from "@/components/ProjectSidebar";
 import ChatArea from "@/components/ChatArea";
 import {
-  fetchProject,
   fetchAgents,
   uploadDocument,
   deleteDocument,
   pollDocumentStatus,
-  fetchProjectSessions,
   createProjectSession,
   deleteProjectSession,
   streamProjectChat,
@@ -27,6 +25,8 @@ import type {Project, Session, Message, AgentInfo, ToolCall} from "@/lib/types";
 import Link from "next/link";
 
 interface ProjectPageProps {
+  initialProject: Project;
+  initialSessions: Session[];
   projectId: string;
   user: {
     name?: string | null;
@@ -45,15 +45,22 @@ function getTitleFromContent(content: string): string {
   return trimmed.slice(0, 40).trim() + "\u2026";
 }
 
-export default function ProjectPage({projectId, user}: ProjectPageProps) {
+export default function ProjectPage({
+  initialProject,
+  initialSessions = [],
+  projectId,
+  user,
+}: ProjectPageProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [project, setProject] = useState<Project | null>(null);
+  const [project, setProject] = useState<Project>(initialProject);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
 
   // Session management (mirrors ChatPage pattern)
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<Session[]>(initialSessions);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(
+    initialSessions.length > 0 ? initialSessions[0].id : null
+  );
   const [messagesBySession, setMessagesBySession] = useState<
     Record<string, Message[]>
   >({});
@@ -67,19 +74,10 @@ export default function ProjectPage({projectId, user}: ProjectPageProps) {
 
   const loadedSessionsRef = useRef<Set<string>>(new Set());
 
-  // Load project + agents + sessions on mount
+  // Load agents on mount (project and sessions are already loaded via SSR)
   useEffect(() => {
-    fetchProject(projectId).then(setProject).catch(console.error);
     fetchAgents().then(setAgents).catch(console.error);
-    fetchProjectSessions(projectId)
-      .then((sess) => {
-        setSessions(sess);
-        if (sess.length > 0) {
-          setActiveSessionId(sess[0].id);
-        }
-      })
-      .catch(console.error);
-  }, [projectId]);
+  }, []);
 
   // Load messages when switching to a session we haven't fetched yet
   useEffect(() => {
@@ -461,16 +459,7 @@ export default function ProjectPage({projectId, user}: ProjectPageProps) {
     updateMessages,
   ]);
 
-  if (!project) {
-    return (
-      <div className='flex h-screen w-screen items-center justify-center bg-[#1a1a1a]'>
-        <div className='flex items-center gap-2 text-zinc-500'>
-          <span className='w-2 h-2 rounded-full bg-violet-400 animate-pulse' />
-          <span className='text-sm'>Loading project...</span>
-        </div>
-      </div>
-    );
-  }
+
 
   return (
     <div className='flex h-screen w-screen overflow-hidden bg-[#1a1a1a] text-zinc-100'>
