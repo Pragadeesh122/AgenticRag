@@ -190,6 +190,7 @@ export default function ChatPage({user}: ChatPageProps) {
       role: "user",
       content,
       toolCalls: [],
+      metadata: {},
       createdAt: new Date().toISOString(),
     };
     updateMessages(currentSessionId, (prev) => [...prev, userMessage]);
@@ -218,6 +219,7 @@ export default function ChatPage({user}: ChatPageProps) {
       role: "assistant",
       content: "",
       toolCalls: [],
+      metadata: {},
       createdAt: new Date().toISOString(),
     };
     updateMessages(currentSessionId, (prev) => [...prev, assistantMessage]);
@@ -324,10 +326,21 @@ export default function ChatPage({user}: ChatPageProps) {
       });
 
       // Save both messages to DB after streaming completes
+      // Replace local IDs with DB IDs so metadata PATCH works
       saveMessages(currentSessionId, [
         {role: "user", content, toolCalls: []},
         {role: "assistant", content: finalContent, toolCalls: finalToolCalls},
-      ]).catch(console.error);
+      ]).then((saved) => {
+        if (saved.length === 2) {
+          updateMessages(currentSessionId, (prev) =>
+            prev.map((m) => {
+              if (m.id === userMessage.id) return { ...m, id: saved[0].id };
+              if (m.id === assistantId) return { ...m, id: saved[1].id };
+              return m;
+            })
+          );
+        }
+      }).catch(console.error);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Unknown error occurred";

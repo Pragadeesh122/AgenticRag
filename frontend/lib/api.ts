@@ -137,18 +137,27 @@ export async function deleteChatSession(
 export async function fetchMessages(sessionId: string): Promise<Message[]> {
   const res = await fetch(`/api/chat/sessions/${sessionId}/messages`);
   if (!res.ok) return [];
-  return res.json();
+  const messages: Message[] = await res.json();
+  // Populate agentName from persisted metadata for restored messages
+  return messages.map((m) => ({
+    ...m,
+    metadata: m.metadata ?? {},
+    agentName: m.agentName ?? (m.metadata as Record<string, unknown>)?.agentName as string | undefined,
+  }));
 }
 
 export async function saveMessages(
   sessionId: string,
-  messages: Array<{ role: string; content: string; toolCalls?: unknown[] }>
-): Promise<void> {
-  await fetch(`/api/chat/sessions/${sessionId}/messages`, {
+  messages: Array<{ role: string; content: string; toolCalls?: unknown[]; metadata?: Record<string, unknown> }>
+): Promise<Array<{ id: string; role: string }>> {
+  const res = await fetch(`/api/chat/sessions/${sessionId}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(messages),
   });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.messages ?? [];
 }
 
 // ─── Projects API ───

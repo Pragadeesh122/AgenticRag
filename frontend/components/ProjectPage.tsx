@@ -277,6 +277,7 @@ export default function ProjectPage({projectId, user}: ProjectPageProps) {
       role: "user",
       content,
       toolCalls: [],
+      metadata: {},
       createdAt: new Date().toISOString(),
     };
     updateMessages(currentSessionId, (prev) => [...prev, userMessage]);
@@ -304,6 +305,7 @@ export default function ProjectPage({projectId, user}: ProjectPageProps) {
       role: "assistant",
       content: "",
       toolCalls: [],
+      metadata: {},
       createdAt: new Date().toISOString(),
     };
     updateMessages(currentSessionId, (prev) => [...prev, assistantMessage]);
@@ -311,6 +313,7 @@ export default function ProjectPage({projectId, user}: ProjectPageProps) {
 
     try {
       let finalContent = "";
+      let detectedAgent = "";
 
       await streamProjectChat(
         projectId,
@@ -327,6 +330,7 @@ export default function ProjectPage({projectId, user}: ProjectPageProps) {
               )
             );
           } else if (event.type === "agent") {
+            detectedAgent = event.data.name;
             const agentTool: ToolCall = {
               id: generateLocalId(),
               name: `${event.data.name} agent`,
@@ -406,11 +410,27 @@ export default function ProjectPage({projectId, user}: ProjectPageProps) {
         selectedAgent
       );
 
-      // Save messages to DB
+      // Save messages to DB (persist agentName in metadata for session restore)
+      // Replace local IDs with DB IDs so PATCH for quiz state works
       saveMessages(currentSessionId, [
         {role: "user", content, toolCalls: []},
-        {role: "assistant", content: finalContent, toolCalls: []},
-      ]).catch(console.error);
+        {
+          role: "assistant",
+          content: finalContent,
+          toolCalls: [],
+          metadata: detectedAgent ? {agentName: detectedAgent} : undefined,
+        },
+      ]).then((saved) => {
+        if (saved.length === 2) {
+          updateMessages(currentSessionId, (prev) =>
+            prev.map((m) => {
+              if (m.id === userMessage.id) return { ...m, id: saved[0].id };
+              if (m.id === assistantId) return { ...m, id: saved[1].id };
+              return m;
+            })
+          );
+        }
+      }).catch(console.error);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
       updateMessages(currentSessionId, (prev) =>

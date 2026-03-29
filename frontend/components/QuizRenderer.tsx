@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
+import type { MessageMetadata } from "@/lib/types";
 
 interface QuizQuestion {
   id: number;
@@ -17,29 +18,61 @@ interface QuizData {
 }
 
 function tryParseQuiz(content: string): QuizData | null {
-  try {
-    // Try raw JSON first
-    const parsed = JSON.parse(content.trim());
-    if (parsed.title && Array.isArray(parsed.questions)) return parsed;
-  } catch {
-    // Try extracting JSON from markdown code fence
-    const match = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
-    if (match) {
-      try {
-        const parsed = JSON.parse(match[1].trim());
-        if (parsed.title && Array.isArray(parsed.questions)) return parsed;
-      } catch {
-        /* not valid JSON */
+  const validate = (parsed: unknown): QuizData | null => {
+    const p = parsed as QuizData;
+    return p.title && Array.isArray(p.questions) ? p : null;
+  };
+
+  try { return validate(JSON.parse(content.trim())); } catch { /* not pure JSON */ }
+
+  const fenceMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+  if (fenceMatch) {
+    try { return validate(JSON.parse(fenceMatch[1].trim())); } catch { /* not valid JSON */ }
+  }
+
+  const braceStart = content.indexOf("{");
+  if (braceStart >= 0) {
+    let depth = 0;
+    for (let i = braceStart; i < content.length; i++) {
+      if (content[i] === "{") depth++;
+      else if (content[i] === "}") depth--;
+      if (depth === 0) {
+        try { return validate(JSON.parse(content.slice(braceStart, i + 1))); } catch { /* not valid JSON */ }
+        break;
       }
     }
   }
+
   return null;
 }
 
-function QuestionCard({ q, index }: { q: QuizQuestion; index: number }) {
-  const [selected, setSelected] = useState<string | null>(null);
-  const [revealed, setRevealed] = useState(false);
-  const [shortAnswer, setShortAnswer] = useState("");
+interface QuestionState {
+  selected: string | null;
+  revealed: boolean;
+  shortAnswer: string;
+}
+
+function QuestionCard({
+  q,
+  index,
+  savedState,
+  onStateChange,
+}: {
+  q: QuizQuestion;
+  index: number;
+  savedState?: QuestionState;
+  onStateChange: (index: number, state: QuestionState) => void;
+}) {
+  const [selected, setSelected] = useState<string | null>(savedState?.selected ?? null);
+  const [revealed, setRevealed] = useState(savedState?.revealed ?? false);
+  const [shortAnswer, setShortAnswer] = useState(savedState?.shortAnswer ?? "");
+
+  const persist = useCallback(
+    (s: string | null, r: boolean, sa: string) => {
+      onStateChange(index, { selected: s, revealed: r, shortAnswer: sa });
+    },
+    [index, onStateChange]
+  );
 
   const isCorrect =
     q.type === "short_answer"
@@ -51,13 +84,21 @@ function QuestionCard({ q, index }: { q: QuizQuestion; index: number }) {
     const value =
       q.type === "true_false" ? option : option.match(/^([A-Z])\)/)?.[1] ?? option;
     setSelected(value);
+    persist(value, revealed, shortAnswer);
   };
 
-  const handleReveal = () => setRevealed(true);
+  const handleReveal = () => {
+    setRevealed(true);
+    persist(selected, true, shortAnswer);
+  };
+
+  const handleShortAnswer = (value: string) => {
+    setShortAnswer(value);
+    persist(selected, revealed, value);
+  };
 
   return (
     <div className="rounded-xl border border-white/8 bg-white/[0.02] overflow-hidden">
-      {/* Question header */}
       <div className="px-4 py-3 border-b border-white/5 flex items-center gap-3">
         <span className="shrink-0 w-6 h-6 rounded-full bg-violet-600/20 text-violet-400 text-xs font-medium flex items-center justify-center">
           {index + 1}
@@ -65,13 +106,12 @@ function QuestionCard({ q, index }: { q: QuizQuestion; index: number }) {
         <span className="text-sm font-medium text-zinc-200">{q.question}</span>
       </div>
 
-      {/* Options */}
       <div className="px-4 py-3 flex flex-col gap-2">
         {q.type === "short_answer" ? (
           <input
             type="text"
             value={shortAnswer}
-            onChange={(e) => setShortAnswer(e.target.value)}
+            onChange={(e) => handleShortAnswer(e.target.value)}
             disabled={revealed}
             placeholder="Type your answer..."
             className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-zinc-200 placeholder:text-zinc-500 outline-none focus:border-violet-500/50 disabled:opacity-50"
@@ -108,7 +148,6 @@ function QuestionCard({ q, index }: { q: QuizQuestion; index: number }) {
         )}
       </div>
 
-      {/* Reveal / Result */}
       <div className="px-4 py-3 border-t border-white/5">
         {!revealed ? (
           <button
@@ -137,15 +176,47 @@ function QuestionCard({ q, index }: { q: QuizQuestion; index: number }) {
   );
 }
 
-export default function QuizRenderer({ content }: { content: string }) {
+interface QuizRendererProps {
+  content: string;
+  messageId: string;
+  savedMetadata?: MessageMetadata;
+}
+
+export default function QuizRenderer({ content, messageId, savedMetadata }: QuizRendererProps) {
   const quiz = tryParseQuiz(content);
+  const [quizState, setQuizState] = useState<Record<number, QuestionState>>(
+    savedMetadata?.quizState ?? {}
+  );
+
+  const handleStateChange = useCallback(
+    (index: number, state: QuestionState) => {
+      setQuizState((prev) => {
+        const next = { ...prev, [index]: state };
+        // Persist to DB in the background
+        fetch(`/api/chat/messages/${messageId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ metadata: { quizState: next } }),
+        }).catch(() => { /* silent — quiz still works locally */ });
+        return next;
+      });
+    },
+    [messageId]
+  );
+
   if (!quiz) return null;
 
   return (
     <div className="flex flex-col gap-3 w-full">
       <h3 className="text-base font-semibold text-zinc-100">{quiz.title}</h3>
       {quiz.questions.map((q, i) => (
-        <QuestionCard key={q.id ?? i} q={q} index={i} />
+        <QuestionCard
+          key={q.id ?? i}
+          q={q}
+          index={i}
+          savedState={quizState[i]}
+          onStateChange={handleStateChange}
+        />
       ))}
     </div>
   );

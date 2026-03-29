@@ -79,6 +79,7 @@ model ChatMessage {
   role          String      // "user" | "assistant"
   content       String      @db.Text
   toolCalls     Json        @default("[]") // ToolCall[] stored as JSON
+  metadata      Json        @default("{}") // Client state (quiz answers, agent name, etc.)
   chatSession   ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
   createdAt     DateTime    @default(now())
 

@@ -10,13 +10,19 @@ export interface ToolCall {
   completedAt?: number;
 }
 
+export interface MessageMetadata {
+  agentName?: string;
+  quizState?: Record<number, { selected: string | null; revealed: boolean; shortAnswer: string }>;
+}
+
 export interface Message {
   id: string;
   role: MessageRole;
   content: string;
   toolCalls: ToolCall[];
+  metadata: MessageMetadata;
   createdAt: string; // ISO string from DB
-  agentName?: string; // set for project agent responses (quiz, visualization, etc.)
+  agentName?: string; // set during streaming, persisted in metadata
 }
 
 export interface Session {

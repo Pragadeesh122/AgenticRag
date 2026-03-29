@@ -32,6 +32,7 @@ export async function GET(
       role: true,
       content: true,
       toolCalls: true,
+      metadata: true,
       createdAt: true,
     },
   });
@@ -66,6 +67,7 @@ export async function POST(
     role: string;
     content: string;
     toolCalls?: Record<string, unknown>[];
+    metadata?: Record<string, unknown>;
   }> = Array.isArray(body) ? body : [body];
 
   // Validate each message's role and content
@@ -84,15 +86,26 @@ export async function POST(
     }
   }
 
-  const created = await prisma.chatMessage.createMany({
-    data: messages.map((m) => ({
-      chatSessionId: id,
-      role: m.role,
-      content: m.content,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      toolCalls: (m.toolCalls ?? []) as any,
-    })),
-  });
+  // Create messages individually (not createMany) so we get IDs back.
+  // Sequential timestamps (1ms apart) ensure deterministic ordering.
+  const now = Date.now();
+  const created = await Promise.all(
+    messages.map((m, i) =>
+      prisma.chatMessage.create({
+        data: {
+          chatSessionId: id,
+          role: m.role,
+          content: m.content,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          toolCalls: (m.toolCalls ?? []) as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          metadata: (m.metadata ?? {}) as any,
+          createdAt: new Date(now + i),
+        },
+        select: { id: true, role: true },
+      })
+    )
+  );
 
   // Touch session updatedAt
   await prisma.chatSession.update({
@@ -100,5 +113,5 @@ export async function POST(
     data: { updatedAt: new Date() },
   });
 
-  return NextResponse.json({ count: created.count }, { status: 201 });
+  return NextResponse.json({ messages: created }, { status: 201 });
 }

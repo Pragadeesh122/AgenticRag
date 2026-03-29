@@ -261,12 +261,15 @@ export default function MessageBubble({
     !isUser &&
     (message.agentName === "quiz" || message.agentName === "visualization");
 
+  // Detect structured content regardless of agentName (handles session restore
+  // where agentName is lost). The parsers validate structure so false positives
+  // are extremely unlikely.
   const structuredType = useMemo(() => {
     if (isUser || isStreaming || !message.content) return null;
-    if (message.agentName === "quiz" && tryParseQuiz(message.content)) return "quiz";
-    if (message.agentName === "visualization" && tryParseChart(message.content)) return "chart";
+    if (tryParseQuiz(message.content)) return "quiz";
+    if (tryParseChart(message.content)) return "chart";
     return null;
-  }, [isUser, isStreaming, message.content, message.agentName]);
+  }, [isUser, isStreaming, message.content]);
 
   const normalizedContent = useMemo(
     () => structuredType ? "" : normalizeMarkdown(message.content),
@@ -306,7 +309,7 @@ export default function MessageBubble({
               </span>
             </div>
           ) : structuredType === "quiz" ? (
-            <QuizRenderer content={message.content} />
+            <QuizRenderer content={message.content} messageId={message.id} savedMetadata={message.metadata} />
           ) : structuredType === "chart" ? (
             <ChartRenderer content={message.content} />
           ) : (
