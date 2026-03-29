@@ -12,16 +12,17 @@ import {
   createBackendSession,
   deleteBackendSession,
   streamChat,
-  fetchSessions,
   createChatSession,
   updateChatSession,
   deleteChatSession,
   fetchMessages,
   saveMessages,
 } from "@/lib/api";
-import type {Session, Message, ToolCall} from "@/lib/types";
+import type {Session, Message, ToolCall, Project} from "@/lib/types";
 
 interface ChatPageProps {
+  initialSessions?: Session[];
+  initialProjects?: Project[];
   user: {
     name?: string | null;
     email?: string | null;
@@ -39,10 +40,12 @@ function getTitleFromContent(content: string): string {
   return trimmed.slice(0, 40).trim() + "\u2026";
 }
 
-export default function ChatPage({user}: ChatPageProps) {
+export default function ChatPage({initialSessions = [], initialProjects = [], user}: ChatPageProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<Session[]>(initialSessions);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(
+    initialSessions.length > 0 ? initialSessions[0].id : null
+  );
   const [messagesBySession, setMessagesBySession] = useState<
     Record<string, Message[]>
   >({});
@@ -54,22 +57,6 @@ export default function ChatPage({user}: ChatPageProps) {
 
   // Track which sessions have had their messages loaded from DB
   const loadedSessionsRef = useRef<Set<string>>(new Set());
-
-  // Load sessions from DB on mount
-  useEffect(() => {
-    async function getSessions() {
-      try {
-        const response = await fetchSessions();
-        setSessions(response);
-        if (response.length > 0) {
-          setActiveSessionId(response[0].id);
-        }
-      } catch (error) {
-        console.error("Error getting sessions:", error);
-      }
-    }
-    getSessions();
-  }, []);
 
   // Load messages when switching to a session we haven't fetched yet
   useEffect(() => {
@@ -378,6 +365,7 @@ export default function ChatPage({user}: ChatPageProps) {
             onSelectSession={handleSelectSession}
             onNewChat={handleNewChat}
             onDeleteSession={handleDeleteSession}
+            initialProjects={initialProjects}
           />
         </div>
       </div>

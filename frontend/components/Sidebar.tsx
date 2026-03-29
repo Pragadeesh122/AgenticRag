@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { PencilSimpleLineIcon } from '@phosphor-icons/react/dist/ssr/PencilSimpleLine';
 import { TrashIcon } from '@phosphor-icons/react/dist/ssr/Trash';
 import { ChatTeardropDots } from '@phosphor-icons/react/dist/ssr/ChatTeardropDots';
 import { FolderSimple } from '@phosphor-icons/react/dist/ssr/FolderSimple';
 import { Plus } from '@phosphor-icons/react/dist/ssr/Plus';
 import { AgenticLogo } from './ChatArea';
-import { fetchProjects, createProject, deleteProject } from '@/lib/api';
+import { createProject, deleteProject } from '@/lib/api';
 import type { Session, Project } from '@/lib/types';
 
 function groupSessionsByTime(sessions: Session[]): {
@@ -48,6 +48,7 @@ interface SidebarProps {
   onSelectSession: (id: string) => void;
   onNewChat: () => void;
   onDeleteSession: (id: string) => void;
+  initialProjects?: Project[];
 }
 
 interface SessionGroupProps {
@@ -104,15 +105,12 @@ export default function Sidebar({
   onSelectSession,
   onNewChat,
   onDeleteSession,
+  initialProjects = [],
 }: SidebarProps) {
   const { today, yesterday, older } = groupSessionsByTime(sessions);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
-
-  useEffect(() => {
-    fetchProjects().then(setProjects).catch(console.error);
-  }, []);
 
   const handleCreateProject = useCallback(async () => {
     const name = newProjectName.trim();
