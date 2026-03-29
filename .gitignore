@@ -33,6 +33,7 @@ prompts
 test_reports
 browser_screenshots
 .claude
+CLAUDE.md
 .playwright-mcp
 screenshots
 test-screenshots

@@ -6,8 +6,10 @@ import {CaretLeft} from "@phosphor-icons/react/dist/ssr/CaretLeft";
 import {CaretRight} from "@phosphor-icons/react/dist/ssr/CaretRight";
 import {PencilSimpleLineIcon} from "@phosphor-icons/react/dist/ssr/PencilSimpleLine";
 import {SignOut} from "@phosphor-icons/react/dist/ssr/SignOut";
+import {Brain} from "@phosphor-icons/react/dist/ssr/Brain";
 import Sidebar from "@/components/Sidebar";
 import ChatArea from "@/components/ChatArea";
+import MemoryPanel from "@/components/MemoryPanel";
 import {
   createBackendSession,
   deleteBackendSession,
@@ -42,6 +44,7 @@ function getTitleFromContent(content: string): string {
 
 export default function ChatPage({initialSessions = [], initialProjects = [], user}: ChatPageProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const [sessions, setSessions] = useState<Session[]>(initialSessions);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(
     initialSessions.length > 0 ? initialSessions[0].id : null
@@ -395,6 +398,13 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
           </div>
           <div className='flex items-center gap-1'>
             <button
+              onClick={() => setMemoryOpen(true)}
+              aria-label='View memory'
+              title='Memory'
+              className='p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-white/8 transition-colors duration-100'>
+              <Brain size={18} weight="duotone" aria-hidden='true' />
+            </button>
+            <button
               onClick={handleNewChat}
               aria-label='New chat'
               className='p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-white/8 transition-colors duration-100'>
@@ -438,6 +448,8 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
           />
         </div>
       </main>
+
+      <MemoryPanel open={memoryOpen} onClose={() => setMemoryOpen(false)} />
     </div>
   );
 }

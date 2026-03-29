@@ -1,4 +1,4 @@
-import type { Session, Message, Project, ProjectDocument, RetrievalSource, AgentInfo } from './types';
+import type { Session, Message, Project, ProjectDocument, RetrievalSource, AgentInfo, UserMemory, MemoryCategory } from './types';
 
 // ─── Python backend (proxied through Next.js API routes) ───
 
@@ -284,6 +284,33 @@ export async function fetchAgents(): Promise<AgentInfo[]> {
   if (!res.ok) return [];
   return res.json();
 }
+
+// ─── Memory API ───
+
+export async function fetchMemory(): Promise<UserMemory> {
+  const res = await fetch('/api/chat/memory');
+  if (!res.ok) {
+    return { work_context: '', personal_context: '', top_of_mind: '', preferences: '' };
+  }
+  return res.json();
+}
+
+export async function updateMemoryCategory(
+  category: MemoryCategory,
+  content: string
+): Promise<void> {
+  await fetch('/api/chat/memory', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ category, content }),
+  });
+}
+
+export async function deleteMemoryCategory(category: MemoryCategory): Promise<void> {
+  await fetch(`/api/chat/memory?category=${category}`, { method: 'DELETE' });
+}
+
+// ─── Project Chat Stream ───
 
 export async function streamProjectChat(
   projectId: string,

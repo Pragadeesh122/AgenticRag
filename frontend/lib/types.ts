@@ -67,3 +67,7 @@ export interface AgentInfo {
   description: string;
   structured_output: boolean;
 }
+
+export type MemoryCategory = 'work_context' | 'personal_context' | 'top_of_mind' | 'preferences';
+
+export type UserMemory = Record<MemoryCategory, string>;

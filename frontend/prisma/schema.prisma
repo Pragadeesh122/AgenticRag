@@ -17,8 +17,22 @@ model User {
   sessions      Session[]
   chatSessions  ChatSession[]
   projects      Project[]
+  memories      UserMemory[]
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
+}
+
+model UserMemory {
+  id        String   @id @default(cuid())
+  userId    String
+  category  String   // work_context | personal_context | top_of_mind | preferences
+  content   String   @db.Text
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, category])
+  @@index([userId])
 }
 
 model Account {
