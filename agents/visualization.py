@@ -3,7 +3,9 @@
 from agents.base import Agent
 
 VISUALIZATION_SCHEMA = """\
-You MUST respond with a single JSON object. Choose one of these three formats based on the data:
+You MUST respond with ONLY a single JSON object — no text before or after.
+
+Choose one of these three formats based on the data:
 
 ### Format 1: Numeric Chart
 Use when data has measurable quantities.
@@ -47,7 +49,42 @@ Use when data describes processes, workflows, hierarchies, relationships, timeli
 }
 ```
 Supported mermaid_type: "flowchart", "sequence", "timeline", "mindmap", "erDiagram", "stateDiagram", "gantt".
-The code field must be valid Mermaid syntax. Use \\n for newlines.
+
+#### Mermaid syntax rules (FOLLOW EXACTLY):
+
+**General rules for ALL mermaid types:**
+- Use \\n for newlines in the "code" string.
+- NEVER use apostrophes (') in any label. Write "Indias" not "India's".
+- NEVER use special characters in labels unless quoted. Wrap in double quotes: "97% growth", "AI/ML", "Q1 2025".
+- NEVER use parentheses inside (( )) nodes. Use [ ] instead if the label contains parens.
+- Keep node labels SHORT (max 5 words). Abbreviate if needed.
+
+**Flowchart rules:**
+- Always start with `graph TD` (top-down) or `graph LR` (left-right).
+- Node IDs must be simple alphanumeric: A, B, C1, node1 (no spaces or special chars in IDs).
+- Label syntax: `A[Label]` for rectangles, `A{Label}` for diamonds, `A((Label))` for circles.
+- Edge syntax: `A --> B` or `A -->|label| B`.
+- Example: `graph TD\\n  A[Start] --> B{Decision}\\n  B -->|Yes| C[Process]\\n  B -->|No| D[End]`
+
+**Mindmap rules (CRITICAL — most common errors happen here):**
+- Indentation defines the tree. Children MUST be indented MORE than their parent.
+- There is exactly ONE root node. Every other node must be a descendant of root.
+- Use 2-space increments: root at 2 spaces, level-1 at 4, level-2 at 6, level-3 at 8.
+- Root syntax: `root((Label))` for rounded or `root(Label)` for plain.
+- Group items under category nodes. DO NOT make a flat list — create 3-5 categories with 2-5 items each.
+- CORRECT example:
+  `mindmap\\n  root((My Topic))\\n    Category A\\n      Item 1\\n      Item 2\\n      Item 3\\n    Category B\\n      Item 4\\n      Item 5`
+- WRONG (flat — will crash): `mindmap\\n  root((Topic))\\n  Item 1\\n  Item 2\\n  Item 3`
+- WRONG (no indent hierarchy): all nodes at same indent level.
+
+**Sequence diagram rules:**
+- Participants first: `participant A as Alice`
+- Messages: `A->>B: message` (solid), `A-->>B: message` (dashed)
+- No special chars in participant names.
+
+**Timeline rules:**
+- Format: `timeline\\n  title My Timeline\\n  2020 : Event A\\n  2021 : Event B`
+- One event per line with ` : ` separator.
 
 ### Format 3: Comparison Table
 Use when comparing multiple items across textual or mixed attributes.
@@ -83,9 +120,11 @@ agent = Agent(
         "- **Pie chart**: Proportions that sum to a whole (5 or fewer categories)\n"
         "- **Line chart**: Trends or changes over time\n"
         "- **Radar chart**: Comparing entities across 3+ numeric attributes\n"
-        "- **Mermaid flowchart**: Processes, workflows, decision trees, system architecture\n"
+        "- **Mermaid flowchart**: Processes, workflows, decision trees, system architecture, "
+        "topic breakdowns, skill trees, hierarchical concepts (use `graph TD` for a clean top-down tree)\n"
         "- **Mermaid timeline**: Chronological events, milestones, history\n"
-        "- **Mermaid mindmap**: Hierarchical concepts, topic breakdowns, skill trees\n"
+        "- **Mermaid mindmap**: ONLY use when a radial/organic layout is specifically requested. "
+        "For hierarchical data, prefer flowchart with `graph TD` instead — it renders as a clean tree.\n"
         "- **Mermaid sequence**: Interactions between systems or people\n"
         "- **Mermaid erDiagram**: Entity relationships, data models\n"
         "- **Mermaid gantt**: Project schedules, task timelines\n"
@@ -96,10 +135,10 @@ agent = Agent(
         "## Rules\n"
         "- Only use data found in the retrieved context.\n"
         "- Do NOT cite source filenames or document IDs.\n"
-        "- After the JSON, suggest 1-2 alternative visualizations in plain text.\n"
         "- If the user asks for a specific type, use that type.\n"
         "- Sort data meaningfully: descending by value for bars, chronological for time series.\n"
-        "- Limit bar/pie charts to 3-10 items. Aggregate extras as 'Other'.\n\n"
+        "- Limit bar/pie charts to 3-10 items. Aggregate extras as 'Other'.\n"
+        "- Respond with ONLY the JSON object. No extra text, no suggestions, no commentary.\n\n"
         "## Output Format\n"
         f"{VISUALIZATION_SCHEMA}\n\n"
         "## Security Rules\n"

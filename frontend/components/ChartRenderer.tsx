@@ -71,18 +71,37 @@ function tryParseVisualization(content: string): VisualizationData | null {
     return null;
   };
 
+  // Try raw JSON first
   try {
     return tryValidate(JSON.parse(content.trim()));
-  } catch {
-    const match = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
-    if (match) {
-      try {
-        return tryValidate(JSON.parse(match[1].trim()));
-      } catch {
-        /* not valid JSON */
+  } catch { /* not pure JSON */ }
+
+  // Try extracting JSON from markdown code fence
+  const fenceMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+  if (fenceMatch) {
+    try {
+      return tryValidate(JSON.parse(fenceMatch[1].trim()));
+    } catch { /* not valid JSON */ }
+  }
+
+  // Try extracting a JSON object from content with trailing text
+  // (LLM sometimes appends commentary after the JSON)
+  const braceStart = content.indexOf("{");
+  if (braceStart >= 0) {
+    // Find the matching closing brace
+    let depth = 0;
+    for (let i = braceStart; i < content.length; i++) {
+      if (content[i] === "{") depth++;
+      else if (content[i] === "}") depth--;
+      if (depth === 0) {
+        try {
+          return tryValidate(JSON.parse(content.slice(braceStart, i + 1)));
+        } catch { /* not valid JSON */ }
+        break;
       }
     }
   }
+
   return null;
 }
 
