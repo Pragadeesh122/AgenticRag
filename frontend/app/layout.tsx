@@ -35,7 +35,7 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} h-full`}
     >
-      <body className="h-full bg-[#1a1a1a] text-zinc-200 antialiased">
+      <body className="h-full text-zinc-200 antialiased">
         <Providers>{children}</Providers>
       </body>
     </html>
