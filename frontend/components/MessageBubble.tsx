@@ -5,7 +5,7 @@ import {Streamdown} from "streamdown";
 import {code} from "@streamdown/code";
 import "streamdown/styles.css";
 import type {Message} from "@/lib/types";
-import ToolIndicator from "./ToolIndicator";
+import ThinkingBlock from "./ThinkingBlock";
 import QuizRenderer, {tryParseQuiz} from "./QuizRenderer";
 import ChartRenderer, {tryParseChart} from "./ChartRenderer";
 
@@ -281,9 +281,13 @@ export default function MessageBubble({
       className={`flex flex-col gap-3 animate-message-in ${
         isUser ? "items-end" : "items-start"
       }`}>
-      {/* Tool calls shown above assistant message content */}
-      {!isUser && message.toolCalls.length > 0 && (
-        <ToolIndicator tools={message.toolCalls} />
+      {/* Thinking block — shows reasoning steps and tool calls */}
+      {!isUser && message.thinkingEntries.length > 0 && (
+        <ThinkingBlock
+          entries={message.thinkingEntries}
+          isStreaming={!!isStreaming}
+          startedAt={message.thinkingStartedAt}
+        />
       )}
 
       {/* Message content */}
@@ -327,11 +331,11 @@ export default function MessageBubble({
         </div>
       )}
 
-      {/* Streaming indicator when no content yet and no tools running */}
+      {/* Streaming indicator when no content yet and no thinking/tools */}
       {!isUser &&
         isStreaming &&
         !message.content &&
-        message.toolCalls.length === 0 && (
+        message.thinkingEntries.length === 0 && (
           <div className='flex items-center gap-1.5 py-1'>
             <span
               className='w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse'

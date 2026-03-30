@@ -6,9 +6,14 @@ export interface ToolCall {
   id: string;
   name: string;
   status: ToolStatus;
+  args?: Record<string, string>;
   startedAt?: number;
   completedAt?: number;
 }
+
+export type ThinkingEntry =
+  | { type: 'text'; content: string }
+  | { type: 'tool'; toolCall: ToolCall };
 
 export interface MessageMetadata {
   agentName?: string;
@@ -20,6 +25,8 @@ export interface Message {
   role: MessageRole;
   content: string;
   toolCalls: ToolCall[];
+  thinkingEntries: ThinkingEntry[];
+  thinkingStartedAt?: number;
   metadata: MessageMetadata;
   createdAt: string; // ISO string from DB
   agentName?: string; // set during streaming, persisted in metadata

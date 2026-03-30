@@ -27,6 +27,7 @@ def project_chat_stream(
 
     # 1. Route to agent (pass full conversation for context-aware classification)
     agent = route_agent(user_message, agent_name, messages)
+    yield _sse("thinking", json.dumps({"content": f"Routing to {agent.name} agent"}))
     yield _sse("agent", json.dumps({"name": agent.name, "description": agent.description}))
     logger.info(f"using agent: {agent.name}")
 
@@ -35,6 +36,7 @@ def project_chat_stream(
         messages[0]["content"] = agent.system_prompt
 
     # 2. Retrieve with agent-specific overrides
+    yield _sse("thinking", json.dumps({"content": "Searching for relevant passages in your documents..."}))
     try:
         results = retrieve(
             project_id=project_id,
@@ -51,6 +53,7 @@ def project_chat_stream(
         {"source": r.get("source", ""), "page": r.get("page"), "score": r.get("score", 0)}
         for r in results
     ]
+    yield _sse("thinking", json.dumps({"content": f"Found {len(results)} relevant passages"}))
     yield _sse("retrieval", json.dumps({"sources": sources, "count": len(results)}))
 
     # 3. Build the context-augmented message

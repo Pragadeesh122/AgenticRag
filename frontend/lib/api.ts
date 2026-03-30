@@ -18,7 +18,8 @@ export async function deleteBackendSession(sessionId: string): Promise<void> {
 
 export type SSEEvent =
   | { type: 'token'; data: string }
-  | { type: 'tool'; data: { name: string } }
+  | { type: 'tool'; data: { name: string; args?: Record<string, string> } }
+  | { type: 'thinking'; data: { content: string } }
   | { type: 'agent'; data: { name: string; description: string } }
   | { type: 'retrieval'; data: { sources: RetrievalSource[]; count: number } }
   | { type: 'error'; data: string }
@@ -77,6 +78,12 @@ export async function streamChat(
           onEvent({ type: 'tool', data: JSON.parse(eventData) });
         } catch {
           // ignore malformed tool event
+        }
+      } else if (eventType === 'thinking') {
+        try {
+          onEvent({ type: 'thinking', data: JSON.parse(eventData) });
+        } catch {
+          // ignore malformed thinking event
         }
       } else if (eventType === 'retrieval') {
         try {
@@ -138,10 +145,11 @@ export async function fetchMessages(sessionId: string): Promise<Message[]> {
   const res = await fetch(`/api/chat/sessions/${sessionId}/messages`);
   if (!res.ok) return [];
   const messages: Message[] = await res.json();
-  // Populate agentName from persisted metadata for restored messages
+  // Populate defaults for restored messages
   return messages.map((m) => ({
     ...m,
     metadata: m.metadata ?? {},
+    thinkingEntries: m.thinkingEntries ?? [],
     agentName: m.agentName ?? (m.metadata as Record<string, unknown>)?.agentName as string | undefined,
   }));
 }
@@ -306,10 +314,6 @@ export async function updateMemoryCategory(
   });
 }
 
-export async function deleteMemoryCategory(category: MemoryCategory): Promise<void> {
-  await fetch(`/api/chat/memory?category=${category}`, { method: 'DELETE' });
-}
-
 // ─── Project Chat Stream ───
 
 export async function streamProjectChat(
@@ -365,6 +369,12 @@ export async function streamProjectChat(
       } else if (eventType === 'agent') {
         try {
           onEvent({ type: 'agent', data: JSON.parse(eventData) });
+        } catch {
+          // ignore
+        }
+      } else if (eventType === 'thinking') {
+        try {
+          onEvent({ type: 'thinking', data: JSON.parse(eventData) });
         } catch {
           // ignore
         }

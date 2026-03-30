@@ -8,7 +8,7 @@ from functions.tool_router import execute_tool_call
 from utils.streaming import iter_response, ToolCallProxy
 from utils.summarizer import summarize_messages
 from memory import extract_and_save_memories
-from api.session import get_messages, save_messages
+from api.session import get_messages, save_messages, get_session_user
 
 logger = logging.getLogger("api.chat")
 
@@ -16,14 +16,50 @@ MAX_PROMPT_TOKENS = 5000
 MAX_TOOL_CALLS = 3
 
 
+def _format_tool_thinking(name: str, args: dict) -> str:
+    """Format a human-readable thinking step for a tool call."""
+    if name == "search":
+        return f'Searching the web for "{args.get("query", "")}"'
+    elif name == "query_db":
+        return f'Querying the database: {args.get("question", "")}'
+    elif name == "browser_task":
+        url = args.get("url", "")
+        goal = args.get("goal", "")
+        return f"Browsing {url}: {goal}" if url else f"Browsing: {goal}"
+    elif name == "query_local_kb":
+        return f'Searching knowledge base for "{args.get("query", "")}"'
+    elif name == "portfolio":
+        return f'Looking up: {args.get("query", "")}'
+    else:
+        return f"Running {name}"
+
+
+def _format_result_summary(name: str, content: str) -> str:
+    """Format a brief summary of a tool result."""
+    try:
+        data = json.loads(content)
+        if isinstance(data, dict) and "error" in data:
+            return f"{name} encountered an error: {data['error'][:100]}"
+        if isinstance(data, dict) and "count" in data:
+            return f"Received {data['count']} results from {name}"
+        if isinstance(data, dict) and "rows" in data:
+            return f"Got {len(data['rows'])} rows from database"
+        if isinstance(data, list):
+            return f"Received {len(data)} results from {name}"
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return f"Received results from {name}"
+
+
 def chat_stream(session_id: str, user_message: str):
     """Generator that yields SSE-formatted events for a single user turn.
 
     Event types:
-        token   — a chunk of the assistant's text response
-        tool    — a tool was called (name + args)
-        error   — something went wrong
-        done    — final event with metadata
+        token     — a chunk of the assistant's text response
+        tool      — a tool was called (name + args)
+        thinking  — reasoning/activity step
+        error     — something went wrong
+        done      — final event with metadata
     """
     messages = get_messages(session_id)
     messages.append({"role": "user", "content": user_message})
@@ -89,13 +125,21 @@ def chat_stream(session_id: str, user_message: str):
             tools_used.extend(tool_names)
             logger.info(f"tool_calls: {tool_names} ({tool_call_count}/{MAX_TOOL_CALLS})")
 
-            for name in tool_names:
-                yield _sse("tool", json.dumps({"name": name}))
+            for tc in tool_calls:
+                name = tc["function"]["name"]
+                try:
+                    args = json.loads(tc["function"]["arguments"])
+                except (json.JSONDecodeError, KeyError):
+                    args = {}
+                # Emit thinking step about what we're about to do
+                yield _sse("thinking", json.dumps({"content": _format_tool_thinking(name, args)}))
+                yield _sse("tool", json.dumps({"name": name, "args": args}))
 
             messages.append(
                 {"role": "assistant", "tool_calls": tool_calls, "content": None}
             )
 
+            # Execute tools
             proxies = [ToolCallProxy(tc) for tc in tool_calls]
             with ThreadPoolExecutor() as executor:
                 futures = {
@@ -106,8 +150,12 @@ def chat_stream(session_id: str, user_message: str):
                     results.append((futures[future], future.result()))
                 order = {p.id: i for i, p in enumerate(proxies)}
                 results.sort(key=lambda r: order[r[0].id])
-                for _, result in results:
+                for proxy, result in results:
                     messages.append(result)
+                    # Emit thinking step about result
+                    result_content = result.get("content", "")
+                    summary = _format_result_summary(proxy.function.name, result_content)
+                    yield _sse("thinking", json.dumps({"content": summary}))
 
     except Exception as e:
         logger.error(f"chat failed: {e}")
@@ -137,8 +185,11 @@ def chat_stream(session_id: str, user_message: str):
 def end_session_with_memory(session_id: str) -> None:
     """Extract memories from the conversation before deleting."""
     try:
+        user_id = get_session_user(session_id)
+        if not user_id:
+            return
         messages = get_messages(session_id)
-        extract_and_save_memories(messages)
+        extract_and_save_memories(messages, user_id)
     except KeyError:
         pass
 

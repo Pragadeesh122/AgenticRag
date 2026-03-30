@@ -21,7 +21,7 @@ import {
   updateChatSession,
   deleteChatSession,
 } from "@/lib/api";
-import type {Project, Session, Message, AgentInfo, ToolCall} from "@/lib/types";
+import type {Project, Session, Message, AgentInfo, ToolCall, ThinkingEntry} from "@/lib/types";
 import Link from "next/link";
 
 interface ProjectPageProps {
@@ -275,6 +275,7 @@ export default function ProjectPage({
       role: "user",
       content,
       toolCalls: [],
+      thinkingEntries: [],
       metadata: {},
       createdAt: new Date().toISOString(),
     };
@@ -303,6 +304,7 @@ export default function ProjectPage({
       role: "assistant",
       content: "",
       toolCalls: [],
+      thinkingEntries: [],
       metadata: {},
       createdAt: new Date().toISOString(),
     };
@@ -318,6 +320,13 @@ export default function ProjectPage({
         backendSessionId,
         content,
         (event) => {
+          const markToolsDone = (entries: ThinkingEntry[]): ThinkingEntry[] =>
+            entries.map((e) =>
+              e.type === "tool" && e.toolCall.status === "running"
+                ? { ...e, toolCall: { ...e.toolCall, status: "done" as const } }
+                : e
+            );
+
           if (event.type === "token") {
             finalContent += event.data;
             updateMessages(currentSessionId, (prev) =>
@@ -327,17 +336,36 @@ export default function ProjectPage({
                   : m
               )
             );
+          } else if (event.type === "thinking") {
+            updateMessages(currentSessionId, (prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      thinkingEntries: [...m.thinkingEntries, { type: "text" as const, content: event.data.content }],
+                      thinkingStartedAt: m.thinkingStartedAt ?? Date.now(),
+                    }
+                  : m
+              )
+            );
           } else if (event.type === "agent") {
             detectedAgent = event.data.name;
             const agentTool: ToolCall = {
               id: generateLocalId(),
               name: `${event.data.name} agent`,
+              args: { description: event.data.description },
               status: "running",
             };
             updateMessages(currentSessionId, (prev) =>
               prev.map((m) =>
                 m.id === assistantId
-                  ? {...m, agentName: event.data.name, toolCalls: [...m.toolCalls, agentTool]}
+                  ? {
+                      ...m,
+                      agentName: event.data.name,
+                      toolCalls: [...m.toolCalls, agentTool],
+                      thinkingEntries: [...m.thinkingEntries, { type: "tool" as const, toolCall: agentTool }],
+                      thinkingStartedAt: m.thinkingStartedAt ?? Date.now(),
+                    }
                   : m
               )
             );
@@ -359,6 +387,8 @@ export default function ProjectPage({
                             : t
                         )
                         .concat(retrievalTool),
+                      thinkingEntries: markToolsDone(m.thinkingEntries)
+                        .concat({ type: "tool" as const, toolCall: retrievalTool }),
                     }
                   : m
               )
@@ -374,6 +404,7 @@ export default function ProjectPage({
                           ? {...t, status: "done" as const}
                           : t
                       ),
+                      thinkingEntries: markToolsDone(m.thinkingEntries),
                     }
                   : m
               )
@@ -398,6 +429,11 @@ export default function ProjectPage({
                         t.status === "running"
                           ? {...t, status: "error" as const}
                           : t
+                      ),
+                      thinkingEntries: m.thinkingEntries.map((e) =>
+                        e.type === "tool" && e.toolCall.status === "running"
+                          ? { ...e, toolCall: { ...e.toolCall, status: "error" as const } }
+                          : e
                       ),
                     }
                   : m
@@ -439,6 +475,11 @@ export default function ProjectPage({
                 content: m.content || `Failed to get response: ${message}`,
                 toolCalls: m.toolCalls.map((t) =>
                   t.status === "running" ? {...t, status: "error" as const} : t
+                ),
+                thinkingEntries: m.thinkingEntries.map((e) =>
+                  e.type === "tool" && e.toolCall.status === "running"
+                    ? { ...e, toolCall: { ...e.toolCall, status: "error" as const } }
+                    : e
                 ),
               }
             : m

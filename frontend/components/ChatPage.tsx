@@ -20,7 +20,7 @@ import {
   fetchMessages,
   saveMessages,
 } from "@/lib/api";
-import type {Session, Message, ToolCall, Project} from "@/lib/types";
+import type {Session, Message, ToolCall, ThinkingEntry, Project} from "@/lib/types";
 
 interface ChatPageProps {
   initialSessions?: Session[];
@@ -180,6 +180,7 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
       role: "user",
       content,
       toolCalls: [],
+      thinkingEntries: [],
       metadata: {},
       createdAt: new Date().toISOString(),
     };
@@ -209,6 +210,7 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
       role: "assistant",
       content: "",
       toolCalls: [],
+      thinkingEntries: [],
       metadata: {},
       createdAt: new Date().toISOString(),
     };
@@ -236,6 +238,19 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
       let finalContent = "";
       let finalToolCalls: ToolCall[] = [];
 
+      const markToolsDone = (entries: ThinkingEntry[]): ThinkingEntry[] =>
+        entries.map((e) =>
+          e.type === "tool" && e.toolCall.status === "running"
+            ? { ...e, toolCall: { ...e.toolCall, status: "done" as const } }
+            : e
+        );
+      const markToolsError = (entries: ThinkingEntry[]): ThinkingEntry[] =>
+        entries.map((e) =>
+          e.type === "tool" && e.toolCall.status === "running"
+            ? { ...e, toolCall: { ...e.toolCall, status: "error" as const } }
+            : e
+        );
+
       await streamChat(backendSessionId, content, (event) => {
         if (event.type === "token") {
           finalContent += event.data;
@@ -250,6 +265,19 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
                         ? {...t, status: "done" as const}
                         : t
                     ),
+                    thinkingEntries: markToolsDone(m.thinkingEntries),
+                  }
+                : m
+            )
+          );
+        } else if (event.type === "thinking") {
+          updateMessages(currentSessionId, (prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? {
+                    ...m,
+                    thinkingEntries: [...m.thinkingEntries, { type: "text" as const, content: event.data.content }],
+                    thinkingStartedAt: m.thinkingStartedAt ?? Date.now(),
                   }
                 : m
             )
@@ -258,13 +286,19 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
           const toolCall: ToolCall = {
             id: generateLocalId(),
             name: event.data.name,
+            args: event.data.args,
             status: "running",
           };
           finalToolCalls.push(toolCall);
           updateMessages(currentSessionId, (prev) =>
             prev.map((m) =>
               m.id === assistantId
-                ? {...m, toolCalls: [...m.toolCalls, toolCall]}
+                ? {
+                    ...m,
+                    toolCalls: [...m.toolCalls, toolCall],
+                    thinkingEntries: [...m.thinkingEntries, { type: "tool" as const, toolCall }],
+                    thinkingStartedAt: m.thinkingStartedAt ?? Date.now(),
+                  }
                 : m
             )
           );
@@ -283,6 +317,7 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
                         ? {...t, status: "done" as const}
                         : t
                     ),
+                    thinkingEntries: markToolsDone(m.thinkingEntries),
                   }
                 : m
             )
@@ -308,6 +343,7 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
                         ? {...t, status: "error" as const}
                         : t
                     ),
+                    thinkingEntries: markToolsError(m.thinkingEntries),
                   }
                 : m
             )
@@ -342,6 +378,11 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
                 content: m.content || `Failed to get response: ${message}`,
                 toolCalls: m.toolCalls.map((t) =>
                   t.status === "running" ? {...t, status: "error" as const} : t
+                ),
+                thinkingEntries: m.thinkingEntries.map((e) =>
+                  e.type === "tool" && e.toolCall.status === "running"
+                    ? { ...e, toolCall: { ...e.toolCall, status: "error" as const } }
+                    : e
                 ),
               }
             : m
