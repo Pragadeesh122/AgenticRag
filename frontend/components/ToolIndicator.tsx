@@ -19,6 +19,31 @@ function formatToolName(name: string): string {
   return name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function getToolDescription(tool: ToolCall): string | null {
+  if (!tool.args) return null;
+  const { name, args } = tool;
+
+  // Agent/retrieval events pass description directly
+  if (args.description) return args.description;
+
+  switch (name) {
+    case 'search':
+      return args.query ? `Searching: ${args.query}` : null;
+    case 'query_db':
+      return args.question ? `Querying: ${args.question}` : null;
+    case 'browser_task':
+      return args.goal ? `Browsing: ${args.goal}` : null;
+    case 'query_local_kb':
+      return args.query ? `Searching knowledge base: ${args.query}` : null;
+    case 'portfolio':
+      return args.query ? `Looking up: ${args.query}` : null;
+    default: {
+      const firstValue = Object.values(args).find((v) => typeof v === 'string' && v.length > 0);
+      return firstValue ? String(firstValue) : null;
+    }
+  }
+}
+
 interface SingleToolProps {
   tool: ToolCall;
   compact?: boolean;
@@ -29,55 +54,63 @@ function SingleTool({ tool, compact = false }: SingleToolProps) {
   const isRunning = tool.status === 'running';
   const isDone = tool.status === 'done';
   const isError = tool.status === 'error';
+  const description = getToolDescription(tool);
 
   return (
     <div
-      className={`flex items-center gap-2 ${compact ? '' : 'px-3 py-2'}`}
+      className={`flex flex-col gap-0.5 ${compact ? '' : 'px-3 py-2'}`}
       role="status"
       aria-label={`Tool ${formatToolName(tool.name)}: ${tool.status}`}
     >
-      {isRunning && (
-        <CircleNotch
-          size={18}
-          className="text-violet-400 animate-spin shrink-0"
-          aria-hidden="true"
-        />
-      )}
-      {isDone && (
-        <CheckCircle
-          size={18}
-          weight="duotone"
-          className="text-emerald-400 shrink-0"
-          aria-hidden="true"
-        />
-      )}
-      {isError && (
-        <WarningCircle
-          size={18}
-          weight="duotone"
-          className="text-amber-400 shrink-0"
-          aria-hidden="true"
-        />
-      )}
-      <span
-        className={`text-xs font-medium truncate ${
-          isRunning
-            ? 'text-zinc-300'
-            : isDone
-            ? 'text-zinc-400'
-            : 'text-amber-300'
-        }`}
-      >
-        {formatToolName(tool.name)}
-      </span>
-      {isRunning && (
-        <span className="text-xs text-zinc-600 shrink-0">Running...</span>
-      )}
-      {isDone && duration && (
-        <span className="text-xs text-zinc-600 shrink-0">{duration}</span>
-      )}
-      {isError && (
-        <span className="text-xs text-amber-500/80 shrink-0">Failed</span>
+      <div className="flex items-center gap-2">
+        {isRunning && (
+          <CircleNotch
+            size={18}
+            className="text-violet-400 animate-spin shrink-0"
+            aria-hidden="true"
+          />
+        )}
+        {isDone && (
+          <CheckCircle
+            size={18}
+            weight="duotone"
+            className="text-emerald-400 shrink-0"
+            aria-hidden="true"
+          />
+        )}
+        {isError && (
+          <WarningCircle
+            size={18}
+            weight="duotone"
+            className="text-amber-400 shrink-0"
+            aria-hidden="true"
+          />
+        )}
+        <span
+          className={`text-xs font-medium truncate ${
+            isRunning
+              ? 'text-zinc-300'
+              : isDone
+              ? 'text-zinc-400'
+              : 'text-amber-300'
+          }`}
+        >
+          {formatToolName(tool.name)}
+        </span>
+        {isRunning && (
+          <span className="text-xs text-zinc-600 shrink-0">Running...</span>
+        )}
+        {isDone && duration && (
+          <span className="text-xs text-zinc-600 shrink-0">{duration}</span>
+        )}
+        {isError && (
+          <span className="text-xs text-amber-500/80 shrink-0">Failed</span>
+        )}
+      </div>
+      {description && (
+        <span className="text-[11px] text-zinc-500 truncate pl-[26px]">
+          {description}
+        </span>
       )}
     </div>
   );

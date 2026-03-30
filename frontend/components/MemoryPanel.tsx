@@ -2,14 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { X } from "@phosphor-icons/react/dist/ssr/X";
-import { Trash } from "@phosphor-icons/react/dist/ssr/Trash";
 import { FloppyDisk } from "@phosphor-icons/react/dist/ssr/FloppyDisk";
 import { Brain } from "@phosphor-icons/react/dist/ssr/Brain";
-import {
-  fetchMemory,
-  updateMemoryCategory,
-  deleteMemoryCategory,
-} from "@/lib/api";
+import { fetchMemory, updateMemoryCategory } from "@/lib/api";
 import type { UserMemory, MemoryCategory } from "@/lib/types";
 
 const CATEGORIES: { key: MemoryCategory; label: string; description: string }[] = [
@@ -78,17 +73,6 @@ export default function MemoryPanel({ open, onClose }: MemoryPanelProps) {
     }
   };
 
-  const handleDelete = async (category: MemoryCategory) => {
-    setSaving(category);
-    try {
-      await deleteMemoryCategory(category);
-      setMemory((prev) => ({ ...prev, [category]: "" }));
-      setDraft((prev) => ({ ...prev, [category]: "" }));
-    } finally {
-      setSaving(null);
-    }
-  };
-
   const isDirty = (category: MemoryCategory) =>
     draft[category] !== memory[category];
 
@@ -148,26 +132,13 @@ export default function MemoryPanel({ open, onClose }: MemoryPanelProps) {
             CATEGORIES.map((cat) => (
               <div key={cat.key} className="group">
                 {/* Category header */}
-                <div className="flex items-center justify-between mb-1.5">
-                  <div>
-                    <h3 className="text-xs font-semibold text-zinc-300 tracking-wide">
-                      {cat.label}
-                    </h3>
-                    <p className="text-[11px] text-zinc-600 mt-0.5">
-                      {cat.description}
-                    </p>
-                  </div>
-                  {memory[cat.key].trim() && (
-                    <button
-                      onClick={() => handleDelete(cat.key)}
-                      disabled={saving === cat.key}
-                      className="p-1 rounded text-zinc-600 hover:text-red-400 hover:bg-red-400/10 transition-colors opacity-0 group-hover:opacity-100"
-                      aria-label={`Delete ${cat.label}`}
-                      title="Delete this memory"
-                    >
-                      <Trash size={13} />
-                    </button>
-                  )}
+                <div className="mb-1.5">
+                  <h3 className="text-xs font-semibold text-zinc-300 tracking-wide">
+                    {cat.label}
+                  </h3>
+                  <p className="text-[11px] text-zinc-600 mt-0.5">
+                    {cat.description}
+                  </p>
                 </div>
 
                 {/* Editable textarea */}
