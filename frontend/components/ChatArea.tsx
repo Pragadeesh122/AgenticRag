@@ -6,6 +6,7 @@ import { BookOpenText } from '@phosphor-icons/react/dist/ssr/BookOpenText';
 import { Table } from '@phosphor-icons/react/dist/ssr/Table';
 import { Compass } from '@phosphor-icons/react/dist/ssr/Compass';
 import { Sparkle } from '@phosphor-icons/react/dist/ssr/Sparkle';
+import { ThreadPrimitive } from '@assistant-ui/react';
 import type { Message } from '@/lib/types';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
@@ -101,6 +102,28 @@ export default function ChatArea({
   onSubmit,
   onStop,
 }: ChatAreaProps) {
+  const inputRef = useRef<HTMLDivElement>(null);
+
+  // Keyboard shortcuts: / to focus input, Escape to blur
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName;
+      const isEditable = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable;
+
+      if (e.key === '/' && !isEditable) {
+        e.preventDefault();
+        const textarea = inputRef.current?.querySelector('textarea');
+        textarea?.focus();
+      }
+
+      if (e.key === 'Escape' && isEditable) {
+        (e.target as HTMLElement).blur();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
@@ -196,13 +219,21 @@ export default function ChatArea({
         ) : (
           <div className="px-4 py-8">
             <div className="max-w-[48rem] mx-auto flex flex-col gap-6">
-              {messages.map((message) => (
-                <MessageBubble
-                  key={message.id}
-                  message={message}
-                  isStreaming={streamingMessageId === message.id}
-                />
-              ))}
+              <ThreadPrimitive.Messages>
+                {({ message: auiMessage }) => {
+                  const index = messages.findIndex((m) => m.id === auiMessage.id);
+                  const message = messages[index];
+                  if (!message) return null;
+                  return (
+                    <MessageBubble
+                      key={message.id}
+                      message={message}
+                      isStreaming={streamingMessageId === message.id}
+                      isLast={index === messages.length - 1}
+                    />
+                  );
+                }}
+              </ThreadPrimitive.Messages>
               <div ref={bottomRef} aria-hidden="true" className="h-1" />
             </div>
           </div>
@@ -224,7 +255,7 @@ export default function ChatArea({
       )}
 
       {/* Input area */}
-      <div className="shrink-0 px-4 pb-5 pt-2">
+      <div ref={inputRef} className="shrink-0 px-4 pb-5 pt-2">
         <div className="max-w-[48rem] mx-auto">
           <ChatInput
             value={inputValue}

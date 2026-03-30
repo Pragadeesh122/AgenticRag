@@ -1,12 +1,13 @@
 "use client";
 
-import {useState, useCallback, useEffect, useRef} from "react";
+import {useState, useCallback, useEffect, useRef, useMemo} from "react";
 import {signOut} from "next-auth/react";
 import {CaretLeft} from "@phosphor-icons/react/dist/ssr/CaretLeft";
 import {CaretRight} from "@phosphor-icons/react/dist/ssr/CaretRight";
 import {PencilSimpleLineIcon} from "@phosphor-icons/react/dist/ssr/PencilSimpleLine";
 import {SignOut} from "@phosphor-icons/react/dist/ssr/SignOut";
 import {Brain} from "@phosphor-icons/react/dist/ssr/Brain";
+import {useExternalStoreRuntime, AssistantRuntimeProvider} from "@assistant-ui/react";
 import Sidebar from "@/components/Sidebar";
 import ChatArea from "@/components/ChatArea";
 import MemoryPanel from "@/components/MemoryPanel";
@@ -20,6 +21,7 @@ import {
   fetchMessages,
   saveMessages,
 } from "@/lib/api";
+import {convertMessage} from "@/lib/chatRuntime";
 import type {Session, Message, ToolCall, ThinkingEntry, Project} from "@/lib/types";
 
 interface ChatPageProps {
@@ -318,6 +320,9 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
                         : t
                     ),
                     thinkingEntries: markToolsDone(m.thinkingEntries),
+                    thinkingDuration: m.thinkingStartedAt
+                      ? (Date.now() - m.thinkingStartedAt) / 1000
+                      : undefined,
                   }
                 : m
             )
@@ -360,8 +365,8 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
         if (saved.length === 2) {
           updateMessages(currentSessionId, (prev) =>
             prev.map((m) => {
-              if (m.id === userMessage.id) return { ...m, id: saved[0].id };
-              if (m.id === assistantId) return { ...m, id: saved[1].id };
+              if (m.id === userMessage.id) return { ...m, dbId: saved[0].id };
+              if (m.id === assistantId) return { ...m, dbId: saved[1].id };
               return m;
             })
           );
@@ -393,6 +398,28 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
       setStreamingMessageId(null);
     }
   }, [inputValue, isLoading, activeSessionId, sessions, updateMessages]);
+
+  // ─── assistant-ui ExternalStoreRuntime ───
+  // Bridge our message state to assistant-ui's runtime so its primitives
+  // (Thread, ActionBar, etc.) can read from our existing state.
+  const runtime = useExternalStoreRuntime({
+    messages: activeMessages,
+    isRunning: isLoading,
+    convertMessage,
+    onNew: async (message) => {
+      // Extract text from the AppendMessage content parts
+      const text = message.content
+        .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+        .map((part) => part.text)
+        .join('\n');
+      if (text) {
+        setInputValue(text);
+        // Use a microtask so inputValue state updates before handleSubmit reads it
+        await Promise.resolve();
+        handleSubmit();
+      }
+    },
+  });
 
   return (
     <div className='flex h-screen w-screen overflow-hidden bg-[#1a1a1a] text-zinc-100'>
@@ -477,17 +504,19 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
         </header>
 
         {/* Chat area */}
-        <div className='relative flex flex-col flex-1 min-h-0'>
-          <ChatArea
-            messages={activeMessages}
-            streamingMessageId={streamingMessageId}
-            isLoading={isLoading}
-            isStreaming={streamingMessageId !== null}
-            inputValue={inputValue}
-            onInputChange={setInputValue}
-            onSubmit={handleSubmit}
-          />
-        </div>
+        <AssistantRuntimeProvider runtime={runtime}>
+          <div className='relative flex flex-col flex-1 min-h-0'>
+            <ChatArea
+              messages={activeMessages}
+              streamingMessageId={streamingMessageId}
+              isLoading={isLoading}
+              isStreaming={streamingMessageId !== null}
+              inputValue={inputValue}
+              onInputChange={setInputValue}
+              onSubmit={handleSubmit}
+            />
+          </div>
+        </AssistantRuntimeProvider>
       </main>
 
       <MemoryPanel open={memoryOpen} onClose={() => setMemoryOpen(false)} />

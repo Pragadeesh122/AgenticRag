@@ -1,8 +1,11 @@
 "use client";
 
-import {useMemo} from "react";
+import {useMemo, useState} from "react";
 import {Streamdown} from "streamdown";
 import {code} from "@streamdown/code";
+import {ActionBarPrimitive} from "@assistant-ui/react";
+import {Copy} from "@phosphor-icons/react/dist/ssr/Copy";
+import {Check} from "@phosphor-icons/react/dist/ssr/Check";
 import "streamdown/styles.css";
 import type {Message} from "@/lib/types";
 import ThinkingBlock from "./ThinkingBlock";
@@ -157,7 +160,7 @@ function fixCodeBlocks(text: string): string {
         .replace(/((?:\) =>|=>|\))\s*\{)\s*([a-zA-Z])/g, "$1\n  $2")
         // Split after semicolons followed by code (statement boundaries)
         .replace(/(;)\s*([a-zA-Z\/])/g, "$1\n$2")
-        // Split before closing } after a statement (e.g. "next(); })" or "return x; }")
+        // Split before closing } after a statement (e.g. "next(); })\" or "return x; }")
         .replace(/(;)\s*(}\)?;?)/g, "$1\n$2")
         // Split Python type-hint fields: "str name:" or "float price:" or "int quantity:"
         .replace(/\b(str|int|float|bool|bytes|None|Any|Optional|List|Dict|Set|Tuple|list|dict|set|tuple)(\s*(?:\[.*?\])?\s+)([a-z_]\w*\s*[=:])/g, "$1\n$3")
@@ -244,16 +247,49 @@ function normalizeMarkdown(text: string): string {
   return fixCodeBlocks(result.join("\n"));
 }
 
+// --- Copy Button for ActionBarPrimitive ---
+
+import {forwardRef} from "react";
+
+const CopyButton = forwardRef<HTMLButtonElement, React.ComponentPropsWithoutRef<"button">>(
+  (props, ref) => {
+    const isCopied = props["data-copied" as keyof typeof props];
+    return (
+      <button
+        ref={ref}
+        {...props}
+        className={`flex items-center gap-1 px-1.5 py-1 rounded-md text-xs transition-all duration-150 ${
+          isCopied
+            ? 'text-emerald-400'
+            : 'text-zinc-600 hover:text-zinc-400 hover:bg-white/5'
+        }`}
+      >
+        {isCopied ? (
+          <>
+            <Check size={14} weight="bold" aria-hidden="true" />
+            <span className="text-[11px]">Copied</span>
+          </>
+        ) : (
+          <Copy size={14} aria-hidden="true" />
+        )}
+      </button>
+    );
+  }
+);
+CopyButton.displayName = "CopyButton";
+
 // --- Message Bubble ---
 
 interface MessageBubbleProps {
   message: Message;
   isStreaming?: boolean;
+  isLast?: boolean;
 }
 
 export default function MessageBubble({
   message,
   isStreaming,
+  isLast = false,
 }: MessageBubbleProps) {
   const isUser = message.role === "user";
 
@@ -271,14 +307,17 @@ export default function MessageBubble({
     return null;
   }, [isUser, isStreaming, message.content]);
 
+  // Use content directly — streaming smoothing is handled by assistant-ui runtime
+  const displayContent = message.content;
+
   const normalizedContent = useMemo(
-    () => structuredType ? "" : normalizeMarkdown(message.content),
-    [message.content, structuredType]
+    () => structuredType ? "" : normalizeMarkdown(displayContent),
+    [displayContent, structuredType]
   );
 
   return (
     <div
-      className={`flex flex-col gap-3 animate-message-in ${
+      className={`group/message flex flex-col gap-1 animate-message-in ${
         isUser ? "items-end" : "items-start"
       }`}>
       {/* Thinking block — shows reasoning steps and tool calls */}
@@ -287,11 +326,12 @@ export default function MessageBubble({
           entries={message.thinkingEntries}
           isStreaming={!!isStreaming}
           startedAt={message.thinkingStartedAt}
+          duration={message.thinkingDuration}
         />
       )}
 
       {/* Message content */}
-      {(message.content || isStreaming) && (
+      {(displayContent || isStreaming) && (
         <div
           className={`
             relative text-sm leading-relaxed
@@ -300,6 +340,7 @@ export default function MessageBubble({
                 ? "max-w-[80%] bg-violet-600/15 border border-violet-500/10 text-zinc-100 rounded-2xl rounded-br-sm px-4 py-3"
                 : "w-full text-zinc-200"
             }
+            ${!isUser && message.thinkingEntries.length > 0 && displayContent ? "animate-content-in" : ""}
           `}>
           {isUser ? (
             <p className='whitespace-pre-wrap wrap-break-word'>
@@ -313,7 +354,7 @@ export default function MessageBubble({
               </span>
             </div>
           ) : structuredType === "quiz" ? (
-            <QuizRenderer content={message.content} messageId={message.id} savedMetadata={message.metadata} />
+            <QuizRenderer content={message.content} messageId={message.dbId || message.id} savedMetadata={message.metadata} />
           ) : structuredType === "chart" ? (
             <ChartRenderer content={message.content} />
           ) : (
@@ -331,10 +372,26 @@ export default function MessageBubble({
         </div>
       )}
 
+      {/* Action bar — copy via assistant-ui ActionBarPrimitive */}
+      {!isUser && displayContent && !isStreaming && (
+        <div
+          className={`flex items-center gap-1 mt-1 transition-opacity duration-150 ${
+            isLast ? 'opacity-100' : 'opacity-0 group-hover/message:opacity-100'
+          }`}
+        >
+          <ActionBarPrimitive.Copy
+            copiedDuration={2000}
+            asChild
+          >
+            <CopyButton />
+          </ActionBarPrimitive.Copy>
+        </div>
+      )}
+
       {/* Streaming indicator when no content yet and no thinking/tools */}
       {!isUser &&
         isStreaming &&
-        !message.content &&
+        !displayContent &&
         message.thinkingEntries.length === 0 && (
           <div className='flex items-center gap-1.5 py-1'>
             <span

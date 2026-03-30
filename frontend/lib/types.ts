@@ -27,9 +27,11 @@ export interface Message {
   toolCalls: ToolCall[];
   thinkingEntries: ThinkingEntry[];
   thinkingStartedAt?: number;
+  thinkingDuration?: number;
   metadata: MessageMetadata;
   createdAt: string; // ISO string from DB
   agentName?: string; // set during streaming, persisted in metadata
+  dbId?: string; // actual database id replaced after streaming completes
 }
 
 export interface Session {

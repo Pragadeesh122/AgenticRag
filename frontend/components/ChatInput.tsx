@@ -102,7 +102,7 @@ export default function ChatInput({
       </div>
 
       <p className="text-center text-[11px] text-zinc-700 mt-1.5 select-none">
-        Enter to send &middot; Shift+Enter for new line
+        Enter to send &middot; Shift+Enter for new line &middot; <kbd className="text-zinc-600">/</kbd> to focus
       </p>
     </div>
   );

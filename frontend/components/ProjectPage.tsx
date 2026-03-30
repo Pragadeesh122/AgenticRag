@@ -405,6 +405,9 @@ export default function ProjectPage({
                           : t
                       ),
                       thinkingEntries: markToolsDone(m.thinkingEntries),
+                      thinkingDuration: m.thinkingStartedAt
+                        ? (Date.now() - m.thinkingStartedAt) / 1000
+                        : undefined,
                     }
                   : m
               )
@@ -458,8 +461,8 @@ export default function ProjectPage({
         if (saved.length === 2) {
           updateMessages(currentSessionId, (prev) =>
             prev.map((m) => {
-              if (m.id === userMessage.id) return { ...m, id: saved[0].id };
-              if (m.id === assistantId) return { ...m, id: saved[1].id };
+              if (m.id === userMessage.id) return { ...m, dbId: saved[0].id };
+              if (m.id === assistantId) return { ...m, dbId: saved[1].id };
               return m;
             })
           );

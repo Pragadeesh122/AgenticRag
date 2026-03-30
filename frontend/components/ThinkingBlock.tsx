@@ -16,22 +16,24 @@ interface ThinkingBlockProps {
   entries: ThinkingEntry[];
   isStreaming: boolean;
   startedAt?: number;
+  duration?: number;
 }
 
 export default function ThinkingBlock({
   entries,
   isStreaming,
-  startedAt,
+  duration,
 }: ThinkingBlockProps) {
   const [expanded, setExpanded] = useState(true);
-  const [duration, setDuration] = useState<string | null>(null);
 
+  // Auto-collapse when done thinking (duration becomes available)
   useEffect(() => {
-    if (!isStreaming && startedAt && !duration) {
-      setDuration(((Date.now() - startedAt) / 1000).toFixed(1));
+    if (duration !== undefined) {
       setExpanded(false);
     }
-  }, [isStreaming, startedAt, duration]);
+  }, [duration]);
+
+  const formattedDuration = duration !== undefined ? duration.toFixed(1) : null;
 
   if (entries.length === 0 && !isStreaming) return null;
 
@@ -61,7 +63,7 @@ export default function ThinkingBlock({
           </>
         ) : (
           <span className="text-xs text-zinc-500 group-hover:text-zinc-400 transition-colors">
-            {duration ? `Reasoned for ${duration}s` : 'Reasoned'}
+            {formattedDuration ? `Reasoned for ${formattedDuration}s` : 'Reasoned'}
           </span>
         )}
       </button>

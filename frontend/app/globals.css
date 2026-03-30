@@ -152,6 +152,22 @@ textarea {
   animation: messageIn 0.25s ease-out forwards;
 }
 
+/* Content appearing after thinking block */
+@keyframes contentIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-content-in {
+  animation: contentIn 0.3s ease-out 0.1s both;
+}
+
 /* ─── Chat prose: markdown rendering styles ─── */
 
 /* Streaming cursor — blinking block caret */
@@ -260,9 +276,12 @@ textarea {
   padding: 0.5rem 1rem !important;
   border: none !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
-  background: rgba(255, 255, 255, 0.03);
-  color: #71717a !important;
+  background: rgba(255, 255, 255, 0.04);
+  color: #a1a1aa !important;
   font-size: 0.75rem !important;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
 }
 
 .chat-prose [data-streamdown="code-block-body"] {
