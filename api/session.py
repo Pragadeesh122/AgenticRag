@@ -18,42 +18,47 @@ def _session_key(session_id: str) -> str:
     return f"{SESSION_PREFIX}{session_id}"
 
 
-def _build_system_prompt() -> str:
+def _build_system_prompt(user_id: str) -> str:
     system_prompt = ORCHESTRATOR
-    user_memory = get_user_memory()
+    user_memory = get_user_memory(user_id)
     if user_memory:
         system_prompt += f"\n\nKnown facts about the user:\n{user_memory}"
         logger.info("loaded user memory from Redis")
     return system_prompt
 
 
-def create_session() -> str:
+def create_session(user_id: str) -> str:
     session_id = uuid.uuid4().hex[:12]
-    messages = [{"role": "system", "content": _build_system_prompt()}]
+    messages = [{"role": "system", "content": _build_system_prompt(user_id)}]
     redis_client.set(
         _session_key(session_id),
         json.dumps(messages),
         ex=SESSION_TTL,
     )
-    logger.info(f"created session {session_id}")
+    # Store user_id on the session so we can attribute memory extraction later
+    redis_client.set(f"{_session_key(session_id)}:user", user_id, ex=SESSION_TTL)
+    logger.info(f"created session {session_id} for user {user_id}")
     return session_id
 
 
-def create_project_session(project_name: str = "") -> str:
+def create_project_session(project_name: str = "", user_id: str = "") -> str:
     """Create a session scoped to a project (RAG context, no tools)."""
     session_id = uuid.uuid4().hex[:12]
     system_prompt = PROJECT_CHAT
     if project_name:
         system_prompt += f"\n\nYou are answering questions about the project: **{project_name}**\n"
-    user_memory = get_user_memory()
-    if user_memory:
-        system_prompt += f"\nKnown facts about the user:\n{user_memory}"
+    if user_id:
+        user_memory = get_user_memory(user_id)
+        if user_memory:
+            system_prompt += f"\nKnown facts about the user:\n{user_memory}"
     messages = [{"role": "system", "content": system_prompt}]
     redis_client.set(
         _session_key(session_id),
         json.dumps(messages),
         ex=SESSION_TTL,
     )
+    if user_id:
+        redis_client.set(f"{_session_key(session_id)}:user", user_id, ex=SESSION_TTL)
     logger.info(f"created project session {session_id}")
     return session_id
 
@@ -79,10 +84,15 @@ def save_messages(session_id: str, messages: list[dict]) -> None:
     )
 
 
-def restore_session(session_id: str, messages: list[dict]) -> None:
+def get_session_user(session_id: str) -> str | None:
+    """Get the user ID associated with a session."""
+    return redis_client.get(f"{_session_key(session_id)}:user")
+
+
+def restore_session(session_id: str, messages: list[dict], user_id: str = "") -> None:
     """Recreate a Redis session from persisted messages (e.g. from DB)."""
     # Build system prompt + filter to user/assistant messages only
-    system_prompt = _build_system_prompt()
+    system_prompt = _build_system_prompt(user_id) if user_id else ORCHESTRATOR
     restored = [{"role": "system", "content": system_prompt}]
     for msg in messages:
         if msg.get("role") in ("user", "assistant") and msg.get("content"):
@@ -108,4 +118,5 @@ def set_session_agent(session_id: str, agent_name: str) -> None:
 def delete_session(session_id: str) -> None:
     redis_client.delete(_session_key(session_id))
     redis_client.delete(f"{_session_key(session_id)}:agent")
+    redis_client.delete(f"{_session_key(session_id)}:user")
     logger.info(f"deleted session {session_id}")

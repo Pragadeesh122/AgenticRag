@@ -190,9 +190,9 @@ def list_agents():
 # ─── Project chat endpoints ───
 
 @router.post("/{project_id}/session")
-def new_project_session(project_id: str, project_name: str = ""):
+def new_project_session(project_id: str, project_name: str = "", user_id: str = ""):
     """Create a new Redis session scoped to a project."""
-    session_id = create_project_session(project_name)
+    session_id = create_project_session(project_name, user_id=user_id)
     return {"session_id": session_id}
 
 

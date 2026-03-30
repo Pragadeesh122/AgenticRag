@@ -6,8 +6,7 @@ from prompts.memory import MEMORY, MEMORY_COMPARISON
 
 logger = logging.getLogger("memory")
 
-MEMORY_KEY = "memory:user"
-
+MEMORY_KEY_PREFIX = "memory:"
 
 MEMORY_CATEGORIES = [
     "work_context",
@@ -17,9 +16,13 @@ MEMORY_CATEGORIES = [
 ]
 
 
-def get_user_memory() -> str:
+def _memory_key(user_id: str) -> str:
+    return f"{MEMORY_KEY_PREFIX}{user_id}"
+
+
+def get_user_memory(user_id: str) -> str:
     """Load all stored user memory from Redis hash, organized by category."""
-    facts = redis_client.hgetall(MEMORY_KEY)
+    facts = redis_client.hgetall(_memory_key(user_id))
     if not facts:
         return ""
     sections = []
@@ -30,9 +33,10 @@ def get_user_memory() -> str:
     return "\n\n".join(sections)
 
 
-def extract_and_save_memories(messages: list):
+def extract_and_save_memories(messages: list, user_id: str):
     """Extract NEW facts from conversation and merge with existing memory in Redis."""
-    existing = redis_client.hgetall(MEMORY_KEY)
+    key = _memory_key(user_id)
+    existing = redis_client.hgetall(key)
 
     conversation = json.dumps(
         [
@@ -83,10 +87,10 @@ def extract_and_save_memories(messages: list):
                     ],
                 )
                 merged = merge_response.choices[0].message.content.strip()
-                redis_client.hset(MEMORY_KEY, category, merged)
+                redis_client.hset(key, category, merged)
                 logger.info(f"merged memory for '{category}'")
             else:
-                redis_client.hset(MEMORY_KEY, category, str(new_value))
+                redis_client.hset(key, category, str(new_value))
                 logger.info(f"created new memory for '{category}'")
 
         logger.info(f"saved {len(new_facts)} memory categories to Redis")

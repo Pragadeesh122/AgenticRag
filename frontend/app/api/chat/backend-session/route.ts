@@ -13,6 +13,7 @@ export async function POST() {
   const backendRes = await fetch(`${backendUrl}/session`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: session.user.id }),
   });
 
   if (!backendRes.ok) {

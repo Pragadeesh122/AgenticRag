@@ -7,9 +7,9 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from api.session import create_session, delete_session, restore_session, session_exists
-from api.chat import chat_stream, end_session_with_memory
+from api.chat import chat_stream
 from api.projects import router as projects_router
-from memory.semantic import MEMORY_KEY, MEMORY_CATEGORIES
+from memory.semantic import MEMORY_KEY_PREFIX, MEMORY_CATEGORIES, _memory_key
 from memory.redis_client import redis_client
 
 logging.basicConfig(level=logging.INFO, format="%(name)s | %(message)s")
@@ -24,6 +24,10 @@ app.add_middleware(
 )
 
 app.include_router(projects_router)
+
+
+class SessionRequest(BaseModel):
+    user_id: str
 
 
 class ChatRequest(BaseModel):
@@ -42,13 +46,14 @@ class MemoryEntry(BaseModel):
 
 
 class MemorySyncRequest(BaseModel):
+    user_id: str
     memories: list[MemoryEntry]
 
 
 @app.post("/session")
-def new_session():
+def new_session(req: SessionRequest):
     """Create a new conversation session."""
-    session_id = create_session()
+    session_id = create_session(req.user_id)
     return {"session_id": session_id}
 
 
@@ -79,8 +84,7 @@ def restore(req: RestoreRequest):
 
 @app.delete("/session/{session_id}")
 def remove_session(session_id: str):
-    """Extract memories and delete the session."""
-    end_session_with_memory(session_id)
+    """Delete the session from Redis."""
     delete_session(session_id)
     return {"status": "deleted"}
 
@@ -88,19 +92,20 @@ def remove_session(session_id: str):
 # ─── Memory (Redis cache — DB is source of truth in Next.js) ───
 
 
-@app.get("/memory")
-def get_memory():
+@app.get("/memory/{user_id}")
+def get_memory(user_id: str):
     """Return all user memory categories from Redis cache."""
-    facts = redis_client.hgetall(MEMORY_KEY)
+    key = _memory_key(user_id)
+    facts = redis_client.hgetall(key)
     return {cat: facts.get(cat, "") for cat in MEMORY_CATEGORIES}
 
 
 @app.post("/memory/sync")
 def sync_memory(req: MemorySyncRequest):
     """Sync memory from DB to Redis cache. Called by Next.js after DB writes."""
-    # Clear existing and rewrite from the DB state
-    redis_client.delete(MEMORY_KEY)
+    key = _memory_key(req.user_id)
+    redis_client.delete(key)
     for entry in req.memories:
         if entry.category in MEMORY_CATEGORIES and entry.content.strip():
-            redis_client.hset(MEMORY_KEY, entry.category, entry.content.strip())
+            redis_client.hset(key, entry.category, entry.content.strip())
     return {"status": "synced", "count": len(req.memories)}

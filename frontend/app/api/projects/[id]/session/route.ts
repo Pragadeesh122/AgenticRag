@@ -28,7 +28,7 @@ export async function POST(
 
   // Create Redis session on backend
   const backendRes = await fetch(
-    `${BACKEND_URL}/projects/${projectId}/session?project_name=${encodeURIComponent(project.name)}`,
+    `${BACKEND_URL}/projects/${projectId}/session?project_name=${encodeURIComponent(project.name)}&user_id=${encodeURIComponent(session.user.id)}`,
     { method: "POST" }
   );
 
