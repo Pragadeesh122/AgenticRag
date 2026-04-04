@@ -129,11 +129,15 @@ export default function ChatArea({
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const userScrolledUp = useRef(false);
 
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+  const scrollToBottomPassive = useCallback((behavior: ScrollBehavior = 'smooth') => {
     bottomRef.current?.scrollIntoView({ behavior, block: 'end' });
     userScrolledUp.current = false;
-    setShowScrollBtn(false);
   }, []);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    scrollToBottomPassive(behavior);
+    setShowScrollBtn(false);
+  }, [scrollToBottomPassive]);
 
   // Detect user scrolling up
   useEffect(() => {
@@ -156,17 +160,17 @@ export default function ChatArea({
   // Auto-scroll on new messages/tokens unless user scrolled up
   useEffect(() => {
     if (!userScrolledUp.current) {
-      scrollToBottom('smooth');
+      scrollToBottomPassive('smooth');
     }
-  }, [messages, scrollToBottom]);
+  }, [messages, scrollToBottomPassive]);
 
   // Scroll immediately when a new user message is sent
   useEffect(() => {
     if (messages.length > 0 && messages[messages.length - 1].role === 'user') {
-      scrollToBottom('smooth');
+      scrollToBottomPassive('smooth');
       userScrolledUp.current = false;
     }
-  }, [messages.length, messages, scrollToBottom]);
+  }, [messages.length, messages, scrollToBottomPassive]);
 
   const isEmpty = messages.length === 0;
 

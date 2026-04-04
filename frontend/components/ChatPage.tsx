@@ -1,13 +1,14 @@
 "use client";
 
-import {useState, useCallback, useEffect, useRef, useMemo} from "react";
-import {signOut} from "next-auth/react";
+import {useState, useCallback, useEffect, useRef} from "react";
+import { signOut } from "@/lib/api";
 import {CaretLeft} from "@phosphor-icons/react/dist/ssr/CaretLeft";
 import {CaretRight} from "@phosphor-icons/react/dist/ssr/CaretRight";
 import {PencilSimpleLineIcon} from "@phosphor-icons/react/dist/ssr/PencilSimpleLine";
 import {SignOut} from "@phosphor-icons/react/dist/ssr/SignOut";
 import {Brain} from "@phosphor-icons/react/dist/ssr/Brain";
 import {useExternalStoreRuntime, AssistantRuntimeProvider} from "@assistant-ui/react";
+import Image from "next/image";
 import Sidebar from "@/components/Sidebar";
 import ChatArea from "@/components/ChatArea";
 import MemoryPanel from "@/components/MemoryPanel";
@@ -482,10 +483,12 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
             {/* User menu */}
             <div className='flex items-center gap-1 ml-2 pl-2 border-l border-white/6'>
               {user.image ? (
-                <img
+                <Image
                   src={user.image}
                   alt={user.name || "User"}
-                  className='w-6 h-6 rounded-full'
+                  className='h-6 w-6 rounded-full'
+                  width={24}
+                  height={24}
                   referrerPolicy='no-referrer'
                 />
               ) : (

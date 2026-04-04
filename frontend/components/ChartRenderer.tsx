@@ -150,13 +150,16 @@ function PieChart({ data }: { data: ChartDataPoint[] }) {
     "#f43f5e", "#06b6d4", "#d946ef", "#84cc16",
   ];
 
-  let cumulative = 0;
-  const stops = data.map((d, i) => {
-    const start = cumulative;
-    const pct = (d.value / total) * 100;
-    cumulative += pct;
-    return `${pieColors[i % pieColors.length]} ${start}% ${cumulative}%`;
-  });
+  const { stops } = data.reduce<{ stops: string[]; cumulative: number }>(
+    (acc, d, i) => {
+      const start = acc.cumulative;
+      const pct = (d.value / total) * 100;
+      const end = start + pct;
+      acc.stops.push(`${pieColors[i % pieColors.length]} ${start}% ${end}%`);
+      return { stops: acc.stops, cumulative: end };
+    },
+    { stops: [], cumulative: 0 }
+  );
   const gradient = `conic-gradient(${stops.join(", ")})`;
 
   return (

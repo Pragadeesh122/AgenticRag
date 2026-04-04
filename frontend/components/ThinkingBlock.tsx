@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { CaretRight } from '@phosphor-icons/react/dist/ssr/CaretRight';
 import { CircleNotch } from '@phosphor-icons/react/dist/ssr/CircleNotch';
 import { CheckCircle } from '@phosphor-icons/react/dist/ssr/CheckCircle';
@@ -24,14 +24,8 @@ export default function ThinkingBlock({
   isStreaming,
   duration,
 }: ThinkingBlockProps) {
-  const [expanded, setExpanded] = useState(true);
-
-  // Auto-collapse when done thinking (duration becomes available)
-  useEffect(() => {
-    if (duration !== undefined) {
-      setExpanded(false);
-    }
-  }, [duration]);
+  const [expandedOverride, setExpandedOverride] = useState<boolean | null>(null);
+  const expanded = expandedOverride ?? duration === undefined;
 
   const formattedDuration = duration !== undefined ? duration.toFixed(1) : null;
 
@@ -41,7 +35,7 @@ export default function ThinkingBlock({
     <div className="w-full">
       {/* Header — clickable to expand/collapse */}
       <button
-        onClick={() => setExpanded((v) => !v)}
+        onClick={() => setExpandedOverride((value) => !(value ?? duration === undefined))}
         className="flex items-center gap-1.5 group cursor-pointer py-1"
       >
         <CaretRight

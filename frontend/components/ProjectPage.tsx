@@ -1,7 +1,7 @@
 "use client";
 
 import {useState, useCallback, useEffect, useRef} from "react";
-import {signOut} from "next-auth/react";
+import { signOut } from "@/lib/api";
 import {CaretLeft} from "@phosphor-icons/react/dist/ssr/CaretLeft";
 import {CaretRight} from "@phosphor-icons/react/dist/ssr/CaretRight";
 import {ArrowLeft} from "@phosphor-icons/react/dist/ssr/ArrowLeft";
@@ -19,10 +19,12 @@ import {
   fetchMessages,
   saveMessages,
   updateChatSession,
-  deleteChatSession,
 } from "@/lib/api";
 import type {Project, Session, Message, AgentInfo, ToolCall, ThinkingEntry} from "@/lib/types";
 import Link from "next/link";
+import { AssistantRuntimeProvider, useExternalStoreRuntime } from "@assistant-ui/react";
+import { convertMessage } from "@/lib/chatRuntime";
+import Image from "next/image";
 
 interface ProjectPageProps {
   initialProject: Project;
@@ -207,14 +209,8 @@ export default function ProjectPage({
 
   const handleDeleteSession = useCallback(
     async (id: string) => {
-      const session = sessions.find((s) => s.id === id);
       try {
-        await deleteChatSession(id);
-        if (session?.backendSessionId) {
-          deleteProjectSession(projectId, session.backendSessionId).catch(
-            () => {}
-          );
-        }
+        await deleteProjectSession(projectId, id);
       } catch {
         // ignore
       }
@@ -503,7 +499,27 @@ export default function ProjectPage({
     updateMessages,
   ]);
 
-
+  // ─── assistant-ui ExternalStoreRuntime ───
+  // Bridge our message state to assistant-ui's runtime so its primitives
+  // (Thread, ActionBar, etc.) can read from our existing state.
+  const runtime = useExternalStoreRuntime({
+    messages: activeMessages,
+    isRunning: isLoading,
+    convertMessage,
+    onNew: async (message) => {
+      // Extract text from the AppendMessage content parts
+      const text = message.content
+        .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+        .map((part) => part.text)
+        .join('\n');
+      if (text) {
+        setInputValue(text);
+        // Use a microtask so inputValue state updates before handleSubmit reads it
+        await Promise.resolve();
+        handleSubmit();
+      }
+    },
+  });
 
   return (
     <div className='flex h-screen w-screen overflow-hidden bg-[#1a1a1a] text-zinc-100'>
@@ -567,10 +583,12 @@ export default function ProjectPage({
           {/* User */}
           <div className='flex items-center gap-1 ml-2 pl-2 border-l border-white/6'>
             {user.image ? (
-              <img
+              <Image
                 src={user.image}
                 alt={user.name || "User"}
-                className='w-6 h-6 rounded-full'
+                className='h-6 w-6 rounded-full'
+                width={24}
+                height={24}
                 referrerPolicy='no-referrer'
               />
             ) : (
@@ -589,15 +607,17 @@ export default function ProjectPage({
 
         {/* Chat area */}
         <div className='relative flex flex-col flex-1 min-h-0'>
-          <ChatArea
-            messages={activeMessages}
-            streamingMessageId={streamingMessageId}
-            isLoading={isLoading}
-            isStreaming={streamingMessageId !== null}
-            inputValue={inputValue}
-            onInputChange={setInputValue}
-            onSubmit={handleSubmit}
-          />
+          <AssistantRuntimeProvider runtime={runtime}>
+            <ChatArea
+              messages={activeMessages}
+              streamingMessageId={streamingMessageId}
+              isLoading={isLoading}
+              isStreaming={streamingMessageId !== null}
+              inputValue={inputValue}
+              onInputChange={setInputValue}
+              onSubmit={handleSubmit}
+            />
+          </AssistantRuntimeProvider>
         </div>
       </main>
     </div>

@@ -3,12 +3,11 @@
 interface RadarChartProps {
   data: Record<string, string | number>[];
   series: string[];
-  title?: string;
 }
 
 const COLORS = ["#8b5cf6", "#3b82f6", "#10b981", "#f59e0b", "#f43f5e", "#06b6d4"];
 
-export default function RadarChart({ data, series, title }: RadarChartProps) {
+export default function RadarChart({ data, series }: RadarChartProps) {
   const n = series.length;
   if (n < 3) return null;
 

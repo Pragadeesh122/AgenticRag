@@ -1,6 +1,6 @@
 "use client";
 
-import {useMemo, useState} from "react";
+import {useMemo} from "react";
 import {Streamdown} from "streamdown";
 import {code} from "@streamdown/code";
 import {ActionBarPrimitive} from "@assistant-ui/react";

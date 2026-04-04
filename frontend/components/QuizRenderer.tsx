@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import type { MessageMetadata } from "@/lib/types";
+import { updateMessageMetadata } from "@/lib/api";
 
 interface QuizQuestion {
   id: number;
@@ -193,11 +194,9 @@ export default function QuizRenderer({ content, messageId, savedMetadata }: Quiz
       setQuizState((prev) => {
         const next = { ...prev, [index]: state };
         // Persist to DB in the background
-        fetch(`/api/chat/messages/${messageId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ metadata: { quizState: next } }),
-        }).catch(() => { /* silent — quiz still works locally */ });
+        updateMessageMetadata(messageId, { quizState: next }).catch(() => {
+          /* silent — quiz still works locally */
+        });
         return next;
       });
     },
