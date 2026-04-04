@@ -1,5 +1,12 @@
 export type MessageRole = 'user' | 'assistant';
 
+export interface User {
+  id: string;
+  email: string;
+  name: string | null;
+  image: string | null;
+}
+
 export type ToolStatus = 'running' | 'done' | 'error';
 
 export interface ToolCall {

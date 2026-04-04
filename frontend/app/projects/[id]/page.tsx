@@ -1,67 +1,59 @@
-import { auth } from "@/auth";
-import { redirect, notFound } from "next/navigation";
-import ProjectPage from "@/components/ProjectPage";
-import { prisma } from "@/lib/prisma";
+"use client";
 
-export default async function ProjectDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect("/auth/signin");
+import { useEffect, useState } from "react";
+import { useAuth } from "@/components/AuthProvider";
+import { redirect, notFound } from "next/navigation";
+import { useParams } from "next/navigation";
+import ProjectPage from "@/components/ProjectPage";
+import { fetchProject, fetchProjectSessions } from "@/lib/api";
+import { Session, Project } from "@/lib/types";
+
+export default function ProjectDetailPage() {
+  const { user, isLoading } = useAuth();
+  const { id } = useParams<{ id: string }>();
+
+  const [project, setProject] = useState<Project | null>(null);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (user && !isLoading) {
+      Promise.all([fetchProject(id), fetchProjectSessions(id)])
+        .then(([fetchedProject, fetchedSessions]) => {
+          setProject(fetchedProject);
+          setSessions(fetchedSessions);
+          setDataLoaded(true);
+        })
+        .catch(() => {
+          setErrorStatus(404);
+        });
+    } else if (!user && !isLoading) {
+      redirect("/auth/signin"); // Or standard landing
+    }
+  }, [user, isLoading, id]);
+
+  if (errorStatus === 404) {
+    notFound();
   }
 
-  const { id } = await params;
-
-  // Server-side fetch to utilize loading.tsx and SSR
-  const [project, chatSessions] = await Promise.all([
-    prisma.project.findFirst({
-      where: { id, userId: session.user.id },
-      include: { documents: { orderBy: { createdAt: "desc" } } },
-    }),
-    prisma.chatSession.findMany({
-      where: { userId: session.user.id, projectId: id },
-      orderBy: { updatedAt: "desc" },
-      select: {
-        id: true,
-        backendSessionId: true,
-        title: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    })
-  ]);
-
-  if (!project) notFound();
-
-  // Convert Prisma Date objects to ISO strings for the Client Component prop boundary
-  const serializedProject = {
-    ...project,
-    createdAt: project.createdAt.toISOString(),
-    updatedAt: project.updatedAt.toISOString(),
-    documents: project.documents.map((d) => ({
-      ...d,
-      createdAt: d.createdAt.toISOString(),
-    })),
-  };
-
-  const serializedSessions = chatSessions.map((s) => ({
-    ...s,
-    createdAt: s.createdAt.toISOString(),
-    updatedAt: s.updatedAt.toISOString(),
-  }));
+  if (isLoading || !dataLoaded || !project || !user) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center bg-[#1a1a1a]">
+        <div className="w-8 h-8 rounded-full border-2 border-zinc-700 border-t-violet-500 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <ProjectPage
-      initialProject={serializedProject as any}
-      initialSessions={serializedSessions as any}
+      initialProject={project}
+      initialSessions={sessions}
       projectId={id}
       user={{
-        name: session.user.name,
-        email: session.user.email,
-        image: session.user.image,
+        name: user.name || "",
+        email: user.email || "",
+        image: user.image || "",
       }}
     />
   );

@@ -73,17 +73,16 @@ export default function LandingPage() {
             </a>
           </nav>
 
-          {/* Right CTAs */}
           <div className="flex items-center gap-2">
             <Link
-              href="/auth/signin"
+              href="/chat"
               className="px-3.5 py-1.5 text-[13px] rounded-full transition-colors duration-150 hidden sm:inline-flex"
               style={{ color: "#6b7280" }}
             >
               Sign in
             </Link>
             <Link
-              href="/auth/signin"
+              href="/chat"
               className="lp-btn-primary inline-flex items-center gap-1.5 px-4 py-1.5 text-[13px] font-medium rounded-full text-white"
             >
               Get started
@@ -166,10 +165,9 @@ export default function LandingPage() {
                   AgenticRAG searches across all of it and cites every source.
                 </p>
 
-                {/* CTA */}
                 <div className="flex flex-col sm:flex-row items-start gap-3 mb-16 lg:mb-0">
                   <Link
-                    href="/auth/signin"
+                    href="/chat"
                     className="lp-btn-primary inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold rounded-full text-white"
                     style={{
                       boxShadow: "0 1px 2px rgba(0,0,0,0.1), 0 4px 12px rgba(0,0,0,0.1)",
@@ -179,7 +177,7 @@ export default function LandingPage() {
                     <ArrowRight size={14} weight="bold" aria-hidden="true" />
                   </Link>
                   <Link
-                    href="/auth/signin"
+                    href="/chat"
                     className="lp-btn-ghost inline-flex items-center gap-2 px-6 py-3 text-sm font-medium rounded-full"
                   >
                     Sign in
@@ -663,7 +661,7 @@ export default function LandingPage() {
                 all your data.
               </h2>
               <Link
-                href="/auth/signin"
+                href="/chat"
                 className="lp-btn-primary inline-flex items-center gap-2 px-8 py-3.5 text-sm font-semibold rounded-full text-white"
                 style={{
                   boxShadow: "0 1px 3px rgba(0,0,0,0.1), 0 6px 20px rgba(0,0,0,0.12)",

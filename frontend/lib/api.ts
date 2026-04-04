@@ -1,9 +1,25 @@
 import type { Session, Message, Project, ProjectDocument, RetrievalSource, AgentInfo, UserMemory, MemoryCategory } from './types';
 
-// ─── Python backend (proxied through Next.js API routes) ───
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+export async function apiFetch(endpoint: string, options: RequestInit = {}) {
+  const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint.replace(/^\/api/, '')}`;
+  const modifiedOptions = {
+    ...options,
+    credentials: 'include' as RequestCredentials,
+  };
+  return fetch(url, modifiedOptions);
+}
+
+// ─── Python backend (proxied or direct) ───
+
+export async function signOut() {
+  await apiFetch('/auth/logout', { method: 'POST' });
+  window.location.reload();
+}
 
 export async function createBackendSession(): Promise<string> {
-  const res = await fetch('/api/chat/backend-session', {
+  const res = await apiFetch('/api/chat/backend-session', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
   });
@@ -13,7 +29,7 @@ export async function createBackendSession(): Promise<string> {
 }
 
 export async function deleteBackendSession(sessionId: string): Promise<void> {
-  await fetch(`/api/chat/backend-session/${sessionId}`, { method: 'DELETE' });
+  await apiFetch(`/api/chat/backend-session/${sessionId}`, { method: 'DELETE' });
 }
 
 export type SSEEvent =
@@ -31,7 +47,7 @@ export async function streamChat(
   onEvent: (event: SSEEvent) => void,
   signal?: AbortSignal
 ): Promise<void> {
-  const res = await fetch('/api/chat/stream', {
+  const res = await apiFetch('/api/chat/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId, message }),
@@ -104,16 +120,16 @@ export async function streamChat(
   }
 }
 
-// ─── Next.js API routes (DB-backed sessions + messages) ───
+// ─── FastAPI session + message persistence ───
 
 export async function fetchSessions(): Promise<Session[]> {
-  const res = await fetch('/api/chat/sessions');
+  const res = await apiFetch('/api/chat/sessions');
   if (!res.ok) return [];
   return res.json();
 }
 
 export async function createChatSession(title?: string): Promise<Session> {
-  const res = await fetch('/api/chat/sessions', {
+  const res = await apiFetch('/api/chat/sessions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title }),
@@ -126,7 +142,7 @@ export async function updateChatSession(
   id: string,
   data: { title?: string; backendSessionId?: string }
 ): Promise<void> {
-  await fetch(`/api/chat/sessions/${id}`, {
+  await apiFetch(`/api/chat/sessions/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -136,13 +152,13 @@ export async function updateChatSession(
 export async function deleteChatSession(
   id: string
 ): Promise<{ backendSessionId: string | null }> {
-  const res = await fetch(`/api/chat/sessions/${id}`, { method: 'DELETE' });
+  const res = await apiFetch(`/api/chat/sessions/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete session');
   return res.json();
 }
 
 export async function fetchMessages(sessionId: string): Promise<Message[]> {
-  const res = await fetch(`/api/chat/sessions/${sessionId}/messages`);
+  const res = await apiFetch(`/api/chat/sessions/${sessionId}/messages`);
   if (!res.ok) return [];
   const messages: Message[] = await res.json();
   // Populate defaults for restored messages
@@ -158,7 +174,7 @@ export async function saveMessages(
   sessionId: string,
   messages: Array<{ role: string; content: string; toolCalls?: unknown[]; metadata?: Record<string, unknown> }>
 ): Promise<Array<{ id: string; role: string }>> {
-  const res = await fetch(`/api/chat/sessions/${sessionId}/messages`, {
+  const res = await apiFetch(`/api/chat/sessions/${sessionId}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(messages),
@@ -168,16 +184,28 @@ export async function saveMessages(
   return data.messages ?? [];
 }
 
+export async function updateMessageMetadata(
+  messageId: string,
+  metadata: Record<string, unknown>
+): Promise<void> {
+  const res = await apiFetch(`/api/chat/messages/${messageId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ metadata }),
+  });
+  if (!res.ok) throw new Error('Failed to update message metadata');
+}
+
 // ─── Projects API ───
 
 export async function fetchProjects(): Promise<Project[]> {
-  const res = await fetch('/api/projects');
+  const res = await apiFetch('/api/projects');
   if (!res.ok) return [];
   return res.json();
 }
 
 export async function createProject(name: string, description?: string): Promise<Project> {
-  const res = await fetch('/api/projects', {
+  const res = await apiFetch('/api/projects', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, description }),
@@ -187,7 +215,7 @@ export async function createProject(name: string, description?: string): Promise
 }
 
 export async function fetchProject(id: string): Promise<Project> {
-  const res = await fetch(`/api/projects/${id}`);
+  const res = await apiFetch(`/api/projects/${id}`);
   if (!res.ok) throw new Error('Failed to fetch project');
   return res.json();
 }
@@ -196,7 +224,7 @@ export async function updateProject(
   id: string,
   data: { name?: string; description?: string; status?: string }
 ): Promise<void> {
-  await fetch(`/api/projects/${id}`, {
+  await apiFetch(`/api/projects/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -204,7 +232,7 @@ export async function updateProject(
 }
 
 export async function deleteProject(id: string): Promise<void> {
-  await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+  await apiFetch(`/api/projects/${id}`, { method: 'DELETE' });
 }
 
 export async function uploadDocument(
@@ -212,7 +240,7 @@ export async function uploadDocument(
   file: File
 ): Promise<ProjectDocument> {
   // 1. Create DB record + get presigned URL (Next.js → Python presign)
-  const initRes = await fetch(`/api/projects/${projectId}/upload`, {
+  const initRes = await apiFetch(`/api/projects/${projectId}/upload`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ filename: file.name, fileSize: file.size }),
@@ -225,7 +253,7 @@ export async function uploadDocument(
   const { uploadUrl, ...document } = await initRes.json();
 
   // 2. Upload file directly to MinIO (no middleman)
-  const uploadRes = await fetch(uploadUrl, {
+  const uploadRes = await apiFetch(uploadUrl, {
     method: 'PUT',
     body: file,
     headers: { 'Content-Type': 'application/octet-stream' },
@@ -235,7 +263,7 @@ export async function uploadDocument(
   }
 
   // 3. Confirm upload + trigger ingestion (same route, PUT)
-  const confirmRes = await fetch(`/api/projects/${projectId}/upload`, {
+  const confirmRes = await apiFetch(`/api/projects/${projectId}/upload`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ documentId: document.id, filename: file.name }),
@@ -248,14 +276,14 @@ export async function uploadDocument(
 }
 
 export async function deleteDocument(projectId: string, docId: string): Promise<void> {
-  await fetch(`/api/projects/${projectId}/documents/${docId}`, { method: 'DELETE' });
+  await apiFetch(`/api/projects/${projectId}/documents/${docId}`, { method: 'DELETE' });
 }
 
 export async function pollDocumentStatus(
   projectId: string,
   docId: string
 ): Promise<{ status: string; chunkCount: number; chunkStrategy: string | null; errorMessage: string | null }> {
-  const res = await fetch(`/api/projects/${projectId}/documents/${docId}/status`);
+  const res = await apiFetch(`/api/projects/${projectId}/documents/${docId}/status`);
   if (!res.ok) throw new Error('Failed to get document status');
   return res.json();
 }
@@ -263,7 +291,7 @@ export async function pollDocumentStatus(
 // ─── Project Chat ───
 
 export async function fetchProjectSessions(projectId: string): Promise<Session[]> {
-  const res = await fetch(`/api/projects/${projectId}/sessions`);
+  const res = await apiFetch(`/api/projects/${projectId}/sessions`);
   if (!res.ok) return [];
   return res.json();
 }
@@ -271,7 +299,7 @@ export async function fetchProjectSessions(projectId: string): Promise<Session[]
 export async function createProjectSession(
   projectId: string
 ): Promise<Session> {
-  const res = await fetch(`/api/projects/${projectId}/session`, {
+  const res = await apiFetch(`/api/projects/${projectId}/session`, {
     method: 'POST',
   });
   if (!res.ok) throw new Error('Failed to create project session');
@@ -282,13 +310,13 @@ export async function deleteProjectSession(
   projectId: string,
   sessionId: string
 ): Promise<void> {
-  await fetch(`/api/projects/${projectId}/session/${sessionId}`, {
+  await apiFetch(`/api/projects/${projectId}/session/${sessionId}`, {
     method: 'DELETE',
   });
 }
 
 export async function fetchAgents(): Promise<AgentInfo[]> {
-  const res = await fetch('/api/projects/agents');
+  const res = await apiFetch('/api/projects/agents');
   if (!res.ok) return [];
   return res.json();
 }
@@ -296,7 +324,7 @@ export async function fetchAgents(): Promise<AgentInfo[]> {
 // ─── Memory API ───
 
 export async function fetchMemory(): Promise<UserMemory> {
-  const res = await fetch('/api/chat/memory');
+  const res = await apiFetch('/api/chat/memory');
   if (!res.ok) {
     return { work_context: '', personal_context: '', top_of_mind: '', preferences: '' };
   }
@@ -307,7 +335,7 @@ export async function updateMemoryCategory(
   category: MemoryCategory,
   content: string
 ): Promise<void> {
-  await fetch('/api/chat/memory', {
+  await apiFetch('/api/chat/memory', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ category, content }),
@@ -324,7 +352,7 @@ export async function streamProjectChat(
   agent?: string | null,
   signal?: AbortSignal
 ): Promise<void> {
-  const res = await fetch(`/api/projects/${projectId}/chat`, {
+  const res = await apiFetch(`/api/projects/${projectId}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId, message, agent: agent || null }),
