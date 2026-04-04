@@ -1,221 +1,362 @@
-"""Project and document management API endpoints."""
-
+import os
+import uuid
 import logging
-from threading import Thread
-
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, update, delete
+from arq import create_pool
+from arq.connections import RedisSettings
+from typing import Optional, List
 
-from pipeline.ingestion import ingest_document
-from pipeline.pinecone_helpers import delete_namespace, delete_document_vectors
-from pipeline.retrieval_cache import invalidate_project_cache
-from pipeline.storage import (
-    ensure_bucket,
-    get_presigned_put_url,
-    delete_object,
-    delete_project_objects,
-)
-from api.session import create_project_session, delete_session
+from api.auth.manager import current_active_user
+from database.core import get_db
+from database.models import User, Project, Document, ChatSession, ChatMessage
+from services.project_service import ProjectService
+from services.document_service import DocumentService
+from pipeline.storage import ensure_bucket, get_presigned_put_url
 from api.project_chat import project_chat_stream
-from agents import AGENTS
+
+from agents.registry import AGENTS
 
 logger = logging.getLogger("api.projects")
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
+redis_host = os.getenv("REDIS_HOST", "localhost")
+redis_port = int(os.getenv("REDIS_PORT", "6379"))
+
+async def get_arq_pool():
+    return await create_pool(RedisSettings(host=redis_host, port=redis_port))
+
+# --- Schemas ---
+class ProjectCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class ProjectUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+
+class UploadInitRequest(BaseModel):
+    filename: str
+    fileSize: int = 0
+
+class UploadConfirmRequest(BaseModel):
+    documentId: str
+    filename: str
 
 class ProjectChatRequest(BaseModel):
-    session_id: str
+    sessionId: str
     message: str
-    chunk_count: int = 0
-    agent: str | None = None
+    agent: Optional[str] = None
 
+# --- Project CRUD ---
+def _serialize_document(d):
+    return {
+        "id": d.id,
+        "projectId": d.project_id,
+        "filename": d.filename,
+        "fileType": d.file_type,
+        "fileSize": d.file_size,
+        "chunkCount": d.chunk_count,
+        "chunkStrategy": d.chunk_strategy,
+        "status": d.status,
+        "errorMessage": d.error_message,
+        "createdAt": d.created_at.isoformat() if hasattr(d, 'created_at') and d.created_at else None
+    }
 
-class PresignedUrlRequest(BaseModel):
-    document_id: str
-    filename: str
+def _serialize_project(p):
+    return {
+        "id": p.id,
+        "name": p.name,
+        "description": p.description,
+        "status": p.status,
+        "documents": [_serialize_document(d) for d in getattr(p, "documents", [])],
+        "createdAt": p.created_at.isoformat() if hasattr(p, "created_at") and p.created_at else None,
+        "updatedAt": p.updated_at.isoformat() if hasattr(p, "updated_at") and p.updated_at else None,
+    }
 
-
-class IngestRequest(BaseModel):
-    document_id: str
-    filename: str
-
-
-# ─── Document processing status (in-memory, keyed by document_id) ───
-_processing_status: dict[str, dict] = {}
-
-
-def _process_document(
-    object_key: str,
-    project_id: str,
-    document_id: str,
-    filename: str,
+@router.get("")
+async def list_projects(
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db)
 ):
-    """Background task: run the ingestion pipeline and update status."""
-    _processing_status[document_id] = {"status": "processing", "error": None}
+    projects = await ProjectService(db).get_user_projects(user.id)
+    return [_serialize_project(p) for p in projects]
 
-    try:
-        result = ingest_document(
-            object_key=object_key,
-            project_id=project_id,
-            document_id=document_id,
-            filename=filename,
-        )
-        _processing_status[document_id] = {
-            "status": "ready",
-            "chunk_count": result["chunk_count"],
-            "chunk_strategy": result["chunk_strategy"],
-            "error": None,
+@router.post("")
+async def create_project(
+    data: ProjectCreate,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    project = await ProjectService(db).create_project(user.id, data.name, data.description)
+    return _serialize_project(project)
+
+# Ensure /agents is declared BEFORE /{project_id}
+@router.get("/agents")
+def list_agents():
+    return [
+        {
+            "name": agent.name,
+            "description": agent.description,
+            "capabilities": getattr(agent, "capabilities", []),
         }
-        logger.info(f"document '{document_id}' processed: {result['chunk_count']} chunks")
-        invalidate_project_cache(project_id)
+        for agent in AGENTS.values()
+    ]
 
-    except Exception as e:
-        logger.error(f"document '{document_id}' processing failed: {e}")
-        _processing_status[document_id] = {
-            "status": "failed",
-            "error": str(e),
-        }
+@router.get("/{project_id}")
+async def fetch_project(
+    project_id: str,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    project = await ProjectService(db).get_project(project_id, user.id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return _serialize_project(project)
+
+@router.patch("/{project_id}")
+async def update_project(
+    project_id: str,
+    data: ProjectUpdate,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    project = await ProjectService(db).get_project(project_id, user.id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    
+    stmt = select(Project).where(Project.id == project_id)
+    p = (await db.execute(stmt)).scalar_one()
+    if data.name is not None:
+        p.name = data.name
+    if data.description is not None:
+        p.description = data.description
+    if data.status is not None:
+        p.status = data.status
+    await db.commit()
+    return {"status": "ok"}
+
+@router.delete("/{project_id}")
+async def delete_project(
+    project_id: str,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    await ProjectService(db).delete_project(project_id, user.id)
+    return {"status": "deleted"}
 
 
-# ─── Presigned URL endpoint ───
-
-@router.post("/{project_id}/presign")
-def get_upload_url(project_id: str, req: PresignedUrlRequest):
-    """Generate a presigned PUT URL for direct browser-to-MinIO upload."""
+# --- Documents CRUD & Upload flow ---
+@router.post("/{project_id}/upload")
+async def start_upload(
+    project_id: str,
+    req: UploadInitRequest,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Generate DB record and presigned PUT URL."""
+    project = await ProjectService(db).get_project(project_id, user.id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    
     ext = req.filename.rsplit(".", 1)[-1].lower() if "." in req.filename else ""
-    if ext not in {"pdf", "txt", "md", "csv", "docx"}:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type: {ext}. Supported: pdf, txt, md, csv, docx",
-        )
+    supported = {"pdf", "txt", "md", "csv", "docx"}
+    if ext not in supported:
+        raise HTTPException(400, f"Unsupported file type. Supported: {', '.join(supported)}")
 
-    object_key = f"{project_id}/{req.document_id}.{ext}"
-
+    doc_service = DocumentService(db)
+    # create_document_record acts as initialization
+    doc = await doc_service.create_document_record(
+        project_id=project_id,
+        user_id=user.id,
+        filename=req.filename,
+        file_type=ext,
+        file_size=req.fileSize
+    )
+    
+    object_key = f"{project_id}/{doc.id}.{ext}"
     try:
         ensure_bucket()
         url = get_presigned_put_url(object_key)
     except Exception as e:
         logger.error(f"failed to generate presigned URL: {e}")
+        # rollback document creation conceptually
+        await db.execute(delete(Document).where(Document.id == doc.id))
+        await db.commit()
         raise HTTPException(status_code=500, detail="Failed to generate upload URL")
 
-    return {"url": url, "object_key": object_key}
+    serialized = _serialize_document(doc)
+    return {
+        **serialized,
+        "uploadUrl": url
+    }
 
-
-# ─── Ingest trigger endpoint ───
-
-@router.post("/{project_id}/ingest")
-def trigger_ingest(project_id: str, req: IngestRequest):
-    """Trigger background ingestion after the file has been uploaded to MinIO."""
+@router.put("/{project_id}/upload")
+async def confirm_upload(
+    project_id: str,
+    req: UploadConfirmRequest,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Trigger background ingestion after MinIO upload completes."""
     ext = req.filename.rsplit(".", 1)[-1].lower() if "." in req.filename else ""
-    object_key = f"{project_id}/{req.document_id}.{ext}"
+    object_key = f"{project_id}/{req.documentId}.{ext}"
 
-    _processing_status[req.document_id] = {"status": "processing", "error": None}
+    stmt = select(Document).where(Document.id == req.documentId, Document.project_id == project_id)
+    doc = (await db.execute(stmt)).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+        
+    doc.status = "processing"
+    await db.commit()
 
-    thread = Thread(
-        target=_process_document,
-        args=(object_key, project_id, req.document_id, req.filename),
-        daemon=True,
+    arq_pool = await get_arq_pool()
+    await arq_pool.enqueue_job(
+        "process_document_task",
+        object_key,
+        project_id,
+        req.documentId,
+        req.filename
     )
-    thread.start()
 
-    return {"document_id": req.document_id, "status": "processing"}
+    return {"document_id": req.documentId, "status": "processing"}
 
+@router.get("/{project_id}/documents")
+async def list_documents(
+    project_id: str,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    docs = await DocumentService(db).get_project_documents(project_id, user.id)
+    return [_serialize_document(d) for d in docs]
 
-# ─── Status endpoint ───
-
-@router.get("/{project_id}/documents/{document_id}/status")
-def get_document_status(project_id: str, document_id: str):
-    """Check processing status of a document."""
-    status = _processing_status.get(document_id)
-    if not status:
-        raise HTTPException(status_code=404, detail="Document not found in processing queue")
-    return {"document_id": document_id, **status}
-
-
-# ─── Delete endpoints ───
-
-@router.delete("/{project_id}")
-def delete_project(project_id: str):
-    """Delete a project's vectors and uploaded files."""
-    try:
-        delete_namespace(project_id)
-    except Exception as e:
-        logger.warning(f"failed to delete Pinecone namespace: {e}")
-
-    try:
-        delete_project_objects(project_id)
-    except Exception as e:
-        logger.warning(f"failed to delete MinIO objects: {e}")
-
-    invalidate_project_cache(project_id)
+@router.delete("/{project_id}/documents/{doc_id}")
+async def remove_document(
+    project_id: str,
+    doc_id: str,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    doc_service = DocumentService(db)
+    await doc_service.delete_document(project_id, doc_id, user.id)
     return {"status": "deleted"}
 
+@router.get("/{project_id}/documents/{doc_id}/status")
+async def get_document_status(
+    project_id: str,
+    doc_id: str,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(Document).where(Document.id == doc_id, Document.project_id == project_id)
+    doc = (await db.execute(stmt)).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+        
+    return {
+        "status": doc.status,
+        "chunkCount": doc.chunk_count,
+        "chunkStrategy": doc.chunk_strategy,
+        "errorMessage": doc.error_message
+    }
 
-@router.delete("/{project_id}/documents/{document_id}")
-def delete_document(project_id: str, document_id: str):
-    """Delete a document's vectors from Pinecone and file from MinIO."""
-    try:
-        delete_document_vectors(project_id, document_id)
-    except Exception as e:
-        logger.warning(f"failed to delete document vectors: {e}")
-
-    # Try to clean up the MinIO object (we don't know the extension, so list by prefix)
-    try:
-        from clients import minio_client
-        from pipeline.storage import BUCKET_NAME
-        objects = minio_client.list_objects(BUCKET_NAME, prefix=f"{project_id}/{document_id}")
-        for obj in objects:
-            minio_client.remove_object(BUCKET_NAME, obj.object_name)
-    except Exception as e:
-        logger.warning(f"failed to delete MinIO object: {e}")
-
-    _processing_status.pop(document_id, None)
-    invalidate_project_cache(project_id)
-    return {"status": "deleted"}
-
-
-# ─── Agents ───
-
-@router.get("/agents")
-def list_agents():
-    """List all available project agents."""
-    return [
-        {"name": a.name, "description": a.description, "structured_output": a.structured_output}
-        for a in AGENTS.values()
-    ]
-
-
-# ─── Project chat endpoints ───
+# --- Project Chat Sessions ---
+@router.get("/{project_id}/sessions")
+async def get_project_sessions(
+    project_id: str,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(ChatSession).where(
+        ChatSession.project_id == project_id,
+        ChatSession.user_id == user.id
+    ).order_by(ChatSession.updated_at.desc())
+    sessions = (await db.execute(stmt)).scalars().all()
+    
+    return [{
+        "id": s.id,
+        "projectId": s.project_id,
+        "backendSessionId": s.backend_session_id,
+        "title": s.title,
+        "createdAt": s.created_at.isoformat(),
+        "updatedAt": s.updated_at.isoformat()
+    } for s in sessions]
 
 @router.post("/{project_id}/session")
-def new_project_session(project_id: str, project_name: str = "", user_id: str = ""):
-    """Create a new Redis session scoped to a project."""
-    session_id = create_project_session(project_name, user_id=user_id)
-    return {"session_id": session_id}
-
+async def create_project_session(
+    project_id: str,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    from api.session import create_session
+    sid = create_session(str(user.id))
+    
+    new_id = str(uuid.uuid4())
+    session = ChatSession(
+        id=new_id,
+        user_id=user.id,
+        project_id=project_id,
+        title="New chat",
+        backend_session_id=sid
+    )
+    db.add(session)
+    await db.commit()
+    await db.refresh(session)
+    return {
+        "id": session.id,
+        "projectId": session.project_id,
+        "backendSessionId": session.backend_session_id,
+        "title": session.title,
+        "createdAt": session.created_at.isoformat(),
+        "updatedAt": session.updated_at.isoformat()
+    }
 
 @router.delete("/{project_id}/session/{session_id}")
-def remove_project_session(project_id: str, session_id: str):
-    """Delete a project chat session from Redis."""
-    delete_session(session_id)
-    return {"status": "deleted"}
-
+async def remove_project_session(
+    project_id: str,
+    session_id: str,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(ChatSession).where(
+        ChatSession.id == session_id,
+        ChatSession.project_id == project_id,
+        ChatSession.user_id == user.id
+    )
+    s = (await db.execute(stmt)).scalar_one_or_none()
+    if not s:
+        raise HTTPException(404, "Session not found")
+        
+    from api.session import delete_session
+    if s.backend_session_id:
+        delete_session(s.backend_session_id)
+        
+    await db.delete(s)
+    await db.commit()
+    return {"status": "ok"}
 
 @router.post("/{project_id}/chat")
-def project_chat(project_id: str, req: ProjectChatRequest):
-    """Send a message and receive an SSE stream with RAG-augmented response."""
+def project_chat_endpoint(
+    project_id: str,
+    req: ProjectChatRequest,
+    user: User = Depends(current_active_user)
+):
     try:
         return StreamingResponse(
             project_chat_stream(
-                session_id=req.session_id,
+                session_id=req.sessionId,
                 user_message=req.message,
                 project_id=project_id,
-                chunk_count=req.chunk_count,
-                agent_name=req.agent,
+                chunk_count=0,
+                agent_name=req.agent
             ),
-            media_type="text/event-stream",
+            media_type="text/event-stream"
         )
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Session not found")
+    except Exception as e:
+        logger.error(f"stream failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

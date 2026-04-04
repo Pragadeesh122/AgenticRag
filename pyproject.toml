@@ -24,4 +24,11 @@ dependencies = [
     "pinecone-text>=0.11.0",
     "python-multipart>=0.0.22",
     "minio>=7.2.20",
+    "sqlalchemy>=2.0.48",
+    "asyncpg>=0.31.0",
+    "alembic>=1.18.4",
+    "fastapi-users[oauth,sqlalchemy]>=15.0.5",
+    "httpx-oauth>=0.16.1",
+    "arq>=0.25.0",
+    "greenlet>=3.3.2",
 ]
