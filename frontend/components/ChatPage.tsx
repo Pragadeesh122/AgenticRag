@@ -13,8 +13,10 @@ import Sidebar from "@/components/Sidebar";
 import ChatArea from "@/components/ChatArea";
 import MemoryPanel from "@/components/MemoryPanel";
 import {
+  backendSessionExists,
   createBackendSession,
   deleteBackendSession,
+  restoreBackendSession,
   streamChat,
   createChatSession,
   updateChatSession,
@@ -176,6 +178,38 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
     }
 
     const currentSessionId = sessionId;
+    const persistedMessages = messagesBySession[currentSessionId] ?? [];
+
+    let backendSessionId =
+      sessions.find((s) => s.id === currentSessionId)?.backendSessionId ??
+      null;
+    if (!backendSessionId) {
+      try {
+        backendSessionId = await createBackendSession();
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === currentSessionId ? {...s, backendSessionId} : s
+          )
+        );
+        updateChatSession(currentSessionId, {backendSessionId}).catch(
+          console.error
+        );
+      } catch (err) {
+        console.error("Failed to create backend session:", err);
+        return;
+      }
+    } else {
+      const exists = await backendSessionExists(backendSessionId);
+      if (!exists) {
+        await restoreBackendSession(
+          backendSessionId,
+          persistedMessages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          }))
+        );
+      }
+    }
 
     // Add user message to state
     const userMessage: Message = {
@@ -221,22 +255,6 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
     setStreamingMessageId(assistantId);
 
     try {
-      // Ensure backend Redis session exists
-      let backendSessionId =
-        sessions.find((s) => s.id === currentSessionId)?.backendSessionId ??
-        null;
-      if (!backendSessionId) {
-        backendSessionId = await createBackendSession();
-        setSessions((prev) =>
-          prev.map((s) =>
-            s.id === currentSessionId ? {...s, backendSessionId} : s
-          )
-        );
-        updateChatSession(currentSessionId, {backendSessionId}).catch(
-          console.error
-        );
-      }
-
       // Accumulate final content for DB save
       let finalContent = "";
       let finalToolCalls: ToolCall[] = [];
@@ -398,7 +416,7 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
       setIsLoading(false);
       setStreamingMessageId(null);
     }
-  }, [inputValue, isLoading, activeSessionId, sessions, updateMessages]);
+  }, [inputValue, isLoading, activeSessionId, sessions, messagesBySession, updateMessages]);
 
   // ─── assistant-ui ExternalStoreRuntime ───
   // Bridge our message state to assistant-ui's runtime so its primitives

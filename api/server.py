@@ -75,6 +75,7 @@ class ChatRequest(BaseModel):
 class RestoreRequest(BaseModel):
     session_id: str
     messages: list[dict]
+    project_name: str | None = None
 
 
 class MemoryEntry(BaseModel):
@@ -116,9 +117,14 @@ def check_session(session_id: str):
 
 
 @app.post("/session/restore")
-def restore(req: RestoreRequest):
+def restore(req: RestoreRequest, user: User = Depends(current_active_user)):
     """Restore a Redis session from persisted messages."""
-    restore_session(req.session_id, req.messages)
+    restore_session(
+        req.session_id,
+        req.messages,
+        str(user.id),
+        req.project_name or "",
+    )
     return {"status": "restored", "session_id": req.session_id}
 
 

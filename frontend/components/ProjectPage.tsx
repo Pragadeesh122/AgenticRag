@@ -9,12 +9,14 @@ import {SignOut} from "@phosphor-icons/react/dist/ssr/SignOut";
 import ProjectSidebar from "@/components/ProjectSidebar";
 import ChatArea from "@/components/ChatArea";
 import {
+  backendSessionExists,
   fetchAgents,
   uploadDocument,
   deleteDocument,
   pollDocumentStatus,
   createProjectSession,
   deleteProjectSession,
+  restoreBackendSession,
   streamProjectChat,
   fetchMessages,
   saveMessages,
@@ -258,11 +260,24 @@ export default function ProjectPage({
     }
 
     const currentSessionId = sessionId;
+    const persistedMessages = messagesBySession[currentSessionId] ?? [];
     const backendSessionId = currentSession?.backendSessionId;
 
     if (!backendSessionId) {
       console.error("No backend session ID found");
       return;
+    }
+
+    const exists = await backendSessionExists(backendSessionId);
+    if (!exists) {
+      await restoreBackendSession(
+        backendSessionId,
+        persistedMessages.map((message) => ({
+          role: message.role,
+          content: message.content,
+        })),
+        project.name
+      );
     }
 
     // Add user message
@@ -496,6 +511,7 @@ export default function ProjectPage({
     selectedAgent,
     activeSessionId,
     sessions,
+    messagesBySession,
     updateMessages,
   ]);
 

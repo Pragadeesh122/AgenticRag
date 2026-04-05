@@ -32,6 +32,30 @@ export async function deleteBackendSession(sessionId: string): Promise<void> {
   await apiFetch(`/api/chat/backend-session/${sessionId}`, { method: 'DELETE' });
 }
 
+export async function backendSessionExists(sessionId: string): Promise<boolean> {
+  const res = await apiFetch(`/session/${sessionId}/exists`);
+  if (!res.ok) return false;
+  const data = await res.json();
+  return data.exists === true;
+}
+
+export async function restoreBackendSession(
+  sessionId: string,
+  messages: Array<{ role: string; content: string }>,
+  projectName?: string
+): Promise<void> {
+  const res = await apiFetch('/session/restore', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      session_id: sessionId,
+      messages,
+      project_name: projectName ?? null,
+    }),
+  });
+  if (!res.ok) throw new Error('Failed to restore backend session');
+}
+
 export type SSEEvent =
   | { type: 'token'; data: string }
   | { type: 'tool'; data: { name: string; args?: Record<string, string> } }
