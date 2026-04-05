@@ -18,6 +18,36 @@ export async function signOut() {
   window.location.reload();
 }
 
+export async function loginWithCredentials(email: string, password: string): Promise<void> {
+  const body = new URLSearchParams();
+  body.set('username', email);
+  body.set('password', password);
+
+  const res = await apiFetch('/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(detail || 'Failed to sign in');
+  }
+}
+
+export async function registerWithCredentials(email: string, password: string): Promise<void> {
+  const res = await apiFetch('/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(detail || 'Failed to create account');
+  }
+}
+
 export async function createBackendSession(): Promise<string> {
   const res = await apiFetch('/api/chat/backend-session', {
     method: 'POST',
@@ -263,7 +293,7 @@ export async function uploadDocument(
   projectId: string,
   file: File
 ): Promise<ProjectDocument> {
-  // 1. Create DB record + get presigned URL (Next.js → Python presign)
+  // 1. Create DB record
   const initRes = await apiFetch(`/api/projects/${projectId}/upload`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -276,31 +306,26 @@ export async function uploadDocument(
 
   const { uploadUrl, ...document } = await initRes.json();
 
-  // 2. Upload file directly to MinIO (no middleman)
-  const uploadRes = await apiFetch(uploadUrl, {
-    method: 'PUT',
-    body: file,
-    headers: { 'Content-Type': 'application/octet-stream' },
+  // 2. Upload file through FastAPI, which stores it in MinIO and triggers ingestion.
+  void uploadUrl;
+  const formData = new FormData();
+  formData.append('document_id', document.id);
+  formData.append('file', file);
+
+  const uploadRes = await apiFetch(`/api/projects/${projectId}/upload/file`, {
+    method: 'POST',
+    body: formData,
   });
   if (!uploadRes.ok) {
-    throw new Error('Direct upload to storage failed');
-  }
-
-  // 3. Confirm upload + trigger ingestion (same route, PUT)
-  const confirmRes = await apiFetch(`/api/projects/${projectId}/upload`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ documentId: document.id, filename: file.name }),
-  });
-  if (!confirmRes.ok) {
-    throw new Error('Failed to trigger ingestion');
+    throw new Error('Failed to upload file');
   }
 
   return { ...document, status: 'processing' } as ProjectDocument;
 }
 
 export async function deleteDocument(projectId: string, docId: string): Promise<void> {
-  await apiFetch(`/api/projects/${projectId}/documents/${docId}`, { method: 'DELETE' });
+  const res = await apiFetch(`/api/projects/${projectId}/documents/${docId}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete document');
 }
 
 export async function pollDocumentStatus(
