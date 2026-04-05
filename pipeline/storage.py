@@ -2,7 +2,7 @@
 
 import logging
 from datetime import timedelta
-from io import BytesIO
+from typing import BinaryIO
 
 from clients import minio_client
 
@@ -35,6 +35,24 @@ def get_presigned_put_url(object_key: str, expires: int = 3600) -> str:
         expires=timedelta(seconds=expires),
     )
     return url
+
+
+def upload_stream(
+    object_key: str,
+    data: BinaryIO,
+    length: int,
+    content_type: str = "application/octet-stream",
+) -> None:
+    """Upload a file-like object to MinIO."""
+    ensure_bucket()
+    minio_client.put_object(
+        BUCKET_NAME,
+        object_key,
+        data=data,
+        length=length,
+        content_type=content_type,
+    )
+    logger.info(f"uploaded '{object_key}' to MinIO")
 
 
 def download_to_bytes(object_key: str) -> bytes:
