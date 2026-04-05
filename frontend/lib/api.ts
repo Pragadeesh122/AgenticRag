@@ -293,7 +293,7 @@ export async function uploadDocument(
   projectId: string,
   file: File
 ): Promise<ProjectDocument> {
-  // 1. Create DB record
+  // 1. Create DB record + receive a scoped presigned upload URL.
   const initRes = await apiFetch(`/api/projects/${projectId}/upload`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -306,18 +306,24 @@ export async function uploadDocument(
 
   const { uploadUrl, ...document } = await initRes.json();
 
-  // 2. Upload file through FastAPI, which stores it in MinIO and triggers ingestion.
-  void uploadUrl;
-  const formData = new FormData();
-  formData.append('document_id', document.id);
-  formData.append('file', file);
-
-  const uploadRes = await apiFetch(`/api/projects/${projectId}/upload/file`, {
-    method: 'POST',
-    body: formData,
+  // 2. Upload file directly to object storage. No cookies should be sent.
+  const uploadRes = await fetch(uploadUrl, {
+    method: 'PUT',
+    mode: 'cors',
+    body: file,
   });
   if (!uploadRes.ok) {
-    throw new Error('Failed to upload file');
+    throw new Error('Direct upload to storage failed');
+  }
+
+  // 3. Confirm upload and trigger ingestion.
+  const confirmRes = await apiFetch(`/api/projects/${projectId}/upload`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ documentId: document.id, filename: file.name }),
+  });
+  if (!confirmRes.ok) {
+    throw new Error('Failed to trigger ingestion');
   }
 
   return { ...document, status: 'processing' } as ProjectDocument;

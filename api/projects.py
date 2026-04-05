@@ -1,7 +1,7 @@
 import os
 import uuid
 import logging
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,7 @@ from database.core import get_db
 from database.models import User, Project, Document, ChatSession, ChatMessage
 from services.project_service import ProjectService
 from services.document_service import DocumentService
-from pipeline.storage import ensure_bucket, get_presigned_put_url, upload_stream
+from pipeline.storage import ensure_bucket, get_presigned_put_url
 from api.project_chat import project_chat_stream
 from tasks.document_tasks import process_document_task
 
@@ -198,70 +198,6 @@ async def start_upload(
         **serialized,
         "uploadUrl": url
     }
-
-
-@router.post("/{project_id}/upload/file")
-async def upload_file(
-    project_id: str,
-    background_tasks: BackgroundTasks,
-    document_id: str = Form(...),
-    file: UploadFile = File(...),
-    user: User = Depends(current_active_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Upload the file through FastAPI and then trigger ingestion."""
-    project = await ProjectService(db).get_project(project_id, user.id)
-    if not project:
-        raise HTTPException(404, "Project not found")
-
-    stmt = select(Document).where(Document.id == document_id, Document.project_id == project_id)
-    doc = (await db.execute(stmt)).scalar_one_or_none()
-    if not doc:
-        raise HTTPException(404, "Document not found")
-
-    object_key = f"{project_id}/{doc.id}.{doc.file_type}"
-
-    try:
-        await file.seek(0)
-        upload_stream(
-            object_key,
-            file.file,
-            length=doc.file_size,
-            content_type=file.content_type or "application/octet-stream",
-        )
-    except Exception as e:
-        logger.error(f"failed to upload file to MinIO: {e}")
-        doc.status = "failed"
-        doc.error_message = "Failed to upload file"
-        await db.commit()
-        raise HTTPException(status_code=500, detail="Failed to upload file")
-    finally:
-        await file.close()
-
-    doc.status = "processing"
-    doc.error_message = None
-    await db.commit()
-
-    if document_ingest_mode == "background":
-        background_tasks.add_task(
-            process_document_task,
-            {},
-            object_key,
-            project_id,
-            document_id,
-            doc.filename,
-        )
-    else:
-        arq_pool = await get_arq_pool()
-        await arq_pool.enqueue_job(
-            "process_document_task",
-            object_key,
-            project_id,
-            document_id,
-            doc.filename,
-        )
-
-    return {"document_id": document_id, "status": "processing"}
 
 @router.put("/{project_id}/upload")
 async def confirm_upload(
