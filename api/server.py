@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from api.session import create_session, delete_session, restore_session, session_exists
 from api.chat import chat_stream
 from api.projects import router as projects_router
-from memory.semantic import MEMORY_KEY_PREFIX, MEMORY_CATEGORIES, _memory_key
+from memory.semantic import _memory_key
 from memory.redis_client import redis_client
 from database.models import UserMemory, User
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -85,15 +85,6 @@ class RestoreRequest(BaseModel):
     project_name: str | None = None
 
 
-class MemoryEntry(BaseModel):
-    category: str
-    content: str
-
-
-class MemorySyncRequest(BaseModel):
-    user_id: str
-    memories: list[MemoryEntry]
-
 class MemoryUpdateData(BaseModel):
     category: str
     content: str
@@ -140,28 +131,6 @@ def remove_session(session_id: str):
     """Delete the session from Redis."""
     delete_session(session_id)
     return {"status": "deleted"}
-
-
-# ─── Memory (Redis cache — DB is source of truth in Next.js) ───
-
-
-@app.get("/memory/{user_id}")
-def get_memory_redis(user_id: str):
-    """Return all user memory categories from Redis cache."""
-    key = _memory_key(user_id)
-    facts = redis_client.hgetall(key)
-    return {cat: facts.get(cat, "") for cat in MEMORY_CATEGORIES}
-
-
-@app.post("/memory/sync")
-def sync_memory(req: MemorySyncRequest):
-    """Sync memory from DB to Redis cache. Called by Next.js after DB writes."""
-    key = _memory_key(req.user_id)
-    redis_client.delete(key)
-    for entry in req.memories:
-        if entry.category in MEMORY_CATEGORIES and entry.content.strip():
-            redis_client.hset(key, entry.category, entry.content.strip())
-    return {"status": "synced", "count": len(req.memories)}
 
 
 @app.get("/chat/memory")
