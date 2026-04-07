@@ -1,8 +1,13 @@
 import json
 import logging
+import uuid
+import asyncio
 from memory.redis_client import redis_client
 from clients import openai_client
 from prompts.memory import MEMORY, MEMORY_COMPARISON
+from database.core import async_session_maker
+from database.models import UserMemory
+from sqlalchemy import select
 
 logger = logging.getLogger("memory")
 
@@ -96,3 +101,33 @@ def extract_and_save_memories(messages: list, user_id: str):
         logger.info(f"saved {len(new_facts)} memory categories to Redis")
     except (json.JSONDecodeError, Exception) as e:
         logger.error(f"failed to extract memories: {e}")
+
+
+async def _sync_redis_memory_to_db(user_id: str) -> None:
+    key = _memory_key(user_id)
+    existing = redis_client.hgetall(key)
+
+    async with async_session_maker() as session:
+        stmt = select(UserMemory).where(UserMemory.user_id == uuid.UUID(user_id))
+        memory = (await session.execute(stmt)).scalar_one_or_none()
+        if not memory:
+            memory = UserMemory(user_id=uuid.UUID(user_id))
+            session.add(memory)
+
+        for category in MEMORY_CATEGORIES:
+            setattr(memory, category, existing.get(category, ""))
+
+        await session.commit()
+
+
+def sync_redis_memory_to_db(user_id: str) -> None:
+    try:
+        asyncio.run(_sync_redis_memory_to_db(user_id))
+        logger.info("synced memory from Redis to Postgres")
+    except Exception as e:
+        logger.error(f"failed to sync memory to Postgres: {e}")
+
+
+def extract_and_persist_memories(messages: list, user_id: str) -> None:
+    extract_and_save_memories(messages, user_id)
+    sync_redis_memory_to_db(user_id)

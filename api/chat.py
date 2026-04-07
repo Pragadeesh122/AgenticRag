@@ -7,8 +7,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from functions.tool_router import execute_tool_call
 from utils.streaming import iter_response, ToolCallProxy
 from utils.summarizer import summarize_messages
-from memory import extract_and_save_memories
 from api.session import get_messages, save_messages, get_session_user
+from services.chat_postprocess_service import (
+    schedule_memory_persistence,
+    schedule_session_title,
+)
 
 logger = logging.getLogger("api.chat")
 
@@ -176,6 +179,11 @@ def chat_stream(session_id: str, user_message: str):
 
     save_messages(session_id, messages)
 
+    user_id = get_session_user(session_id)
+    if user_id:
+        schedule_memory_persistence(messages, user_id)
+    schedule_session_title(session_id, user_message, full_content)
+
     yield _sse(
         "done",
         json.dumps({"tools_used": tools_used, "prompt_tokens": prompt_tokens}),
@@ -189,7 +197,7 @@ def end_session_with_memory(session_id: str) -> None:
         if not user_id:
             return
         messages = get_messages(session_id)
-        extract_and_save_memories(messages, user_id)
+        schedule_memory_persistence(messages, user_id)
     except KeyError:
         pass
 

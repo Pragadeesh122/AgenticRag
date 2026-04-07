@@ -5,10 +5,14 @@ import logging
 
 from utils.streaming import iter_response
 from utils.summarizer import summarize_messages
-from api.session import get_messages, save_messages
+from api.session import get_messages, save_messages, get_session_user
 from pipeline.retriever import retrieve
 from prompts.project_chat import build_context_block
 from agents.router import route as route_agent
+from services.chat_postprocess_service import (
+    schedule_memory_persistence,
+    schedule_session_title,
+)
 
 logger = logging.getLogger("api.project_chat")
 
@@ -97,6 +101,11 @@ def project_chat_stream(
         messages.extend(updated)
 
     save_messages(session_id, messages)
+
+    user_id = get_session_user(session_id)
+    if user_id:
+        schedule_memory_persistence(messages, user_id)
+    schedule_session_title(session_id, user_message, full_content)
 
     yield _sse(
         "done",
