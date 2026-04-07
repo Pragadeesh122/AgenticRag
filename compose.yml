@@ -51,12 +51,18 @@ services:
       - "127.0.0.1:9001:9001"
     volumes:
       - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", ": >/dev/tcp/127.0.0.1/9000"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
 
   minio-setup:
     image: minio/mc:latest
     depends_on:
       minio:
-        condition: service_started
+        condition: service_healthy
     environment:
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY must be set}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY must be set}
@@ -64,10 +70,14 @@ services:
       - ./minio/cors.xml:/config/cors.xml:ro
     entrypoint: >
       /bin/sh -c "
-      mc alias set local http://minio:9000 $$MINIO_ACCESS_KEY $$MINIO_SECRET_KEY &&
+      until mc alias set local http://minio:9000 $$MINIO_ACCESS_KEY $$MINIO_SECRET_KEY; do
+        echo 'Waiting for MinIO to accept connections...';
+        sleep 2;
+      done &&
       mc ready local &&
       mc mb --ignore-existing local/agenticrag-documents &&
-      mc cors set local/agenticrag-documents /config/cors.xml
+      mc cors set local/agenticrag-documents /config/cors.xml ||
+      echo 'Skipping MinIO bucket CORS setup because this MinIO build returned NotImplemented.'
       "
 
   api:
@@ -99,7 +109,7 @@ services:
       redis:
         condition: service_healthy
       minio:
-        condition: service_started
+        condition: service_healthy
       minio-setup:
         condition: service_completed_successfully
 
@@ -128,7 +138,7 @@ services:
       redis:
         condition: service_healthy
       minio:
-        condition: service_started
+        condition: service_healthy
       minio-setup:
         condition: service_completed_successfully
 
