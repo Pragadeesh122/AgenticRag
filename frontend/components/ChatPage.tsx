@@ -18,6 +18,7 @@ import {
   deleteBackendSession,
   restoreBackendSession,
   streamChat,
+  fetchSessions,
   createChatSession,
   updateChatSession,
   deleteChatSession,
@@ -25,7 +26,16 @@ import {
   saveMessages,
 } from "@/lib/api";
 import {convertMessage} from "@/lib/chatRuntime";
-import type {Session, Message, ToolCall, ThinkingEntry, Project} from "@/lib/types";
+import {
+  appendReasoningPart,
+  appendSourceParts,
+  appendTextPart,
+  appendToolCallPart,
+  buildAssistantPartsFromLegacy,
+  getDefaultAssistantStatus,
+  markRunningToolParts,
+} from "@/lib/messageParts";
+import type {Session, Message, ToolCall, ThinkingEntry, Project, RetrievalSource} from "@/lib/types";
 
 interface ChatPageProps {
   initialSessions?: Session[];
@@ -41,10 +51,27 @@ function generateLocalId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function getTitleFromContent(content: string): string {
-  const trimmed = content.trim();
-  if (trimmed.length <= 40) return trimmed;
-  return trimmed.slice(0, 40).trim() + "\u2026";
+function extractComposerText(message: { content: unknown }): string {
+  if (typeof message.content === "string") return message.content;
+  if (!Array.isArray(message.content)) return "";
+
+  return message.content
+    .filter(
+      (
+        part
+      ): part is {
+        type: "text";
+        text: string;
+      } =>
+        typeof part === "object" &&
+        part !== null &&
+        "type" in part &&
+        "text" in part &&
+        part.type === "text" &&
+        typeof part.text === "string"
+    )
+    .map((part) => part.text)
+    .join("\n");
 }
 
 export default function ChatPage({initialSessions = [], initialProjects = [], user}: ChatPageProps) {
@@ -163,9 +190,7 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
     // Create a new DB session if none is active
     if (!sessionId) {
       try {
-        const newSession = await createChatSession(
-          getTitleFromContent(content)
-        );
+        const newSession = await createChatSession();
         setSessions((prev) => [newSession, ...prev]);
         setMessagesBySession((prev) => ({...prev, [newSession.id]: []}));
         loadedSessionsRef.current.add(newSession.id);
@@ -216,26 +241,14 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
       id: generateLocalId(),
       role: "user",
       content,
+      parts: [{ type: "text", text: content }],
       toolCalls: [],
       thinkingEntries: [],
+      sources: [],
       metadata: {},
       createdAt: new Date().toISOString(),
     };
     updateMessages(currentSessionId, (prev) => [...prev, userMessage]);
-
-    // Update title if it's still "New chat"
-    const session = sessions.find((s) => s.id === currentSessionId);
-    if (session && session.title === "New chat") {
-      const newTitle = getTitleFromContent(content);
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.id === currentSessionId ? {...s, title: newTitle} : s
-        )
-      );
-      updateChatSession(currentSessionId, {title: newTitle}).catch(
-        console.error
-      );
-    }
 
     setInputValue("");
     setIsLoading(true);
@@ -246,8 +259,11 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
       id: assistantId,
       role: "assistant",
       content: "",
+      parts: [],
       toolCalls: [],
       thinkingEntries: [],
+      sources: [],
+      status: { type: "running" },
       metadata: {},
       createdAt: new Date().toISOString(),
     };
@@ -258,6 +274,10 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
       // Accumulate final content for DB save
       let finalContent = "";
       let finalToolCalls: ToolCall[] = [];
+      let finalThinkingEntries: ThinkingEntry[] = [];
+      let finalSources: RetrievalSource[] = [];
+      let finalParts = buildAssistantPartsFromLegacy(assistantMessage);
+      let finalStatus = getDefaultAssistantStatus(assistantMessage) ?? { type: "running" as const };
 
       const markToolsDone = (entries: ThinkingEntry[]): ThinkingEntry[] =>
         entries.map((e) =>
@@ -275,28 +295,39 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
       await streamChat(backendSessionId, content, (event) => {
         if (event.type === "token") {
           finalContent += event.data;
+          finalToolCalls = finalToolCalls.map((t) =>
+            t.status === "running" ? { ...t, status: "done" as const } : t
+          );
+          finalThinkingEntries = markToolsDone(finalThinkingEntries);
+          finalParts = appendTextPart(markRunningToolParts(finalParts, "done"), event.data);
+          finalStatus = { type: "running" };
           updateMessages(currentSessionId, (prev) =>
             prev.map((m) =>
               m.id === assistantId
                 ? {
                     ...m,
                     content: m.content + event.data,
+                    parts: appendTextPart(markRunningToolParts(m.parts, "done"), event.data),
                     toolCalls: m.toolCalls.map((t) =>
                       t.status === "running"
                         ? {...t, status: "done" as const}
                         : t
                     ),
                     thinkingEntries: markToolsDone(m.thinkingEntries),
+                    status: { type: "running" },
                   }
                 : m
             )
           );
         } else if (event.type === "thinking") {
+          finalThinkingEntries = [...finalThinkingEntries, { type: "text" as const, content: event.data.content }];
+          finalParts = appendReasoningPart(finalParts, event.data.content);
           updateMessages(currentSessionId, (prev) =>
             prev.map((m) =>
               m.id === assistantId
                 ? {
                     ...m,
+                    parts: appendReasoningPart(m.parts, event.data.content),
                     thinkingEntries: [...m.thinkingEntries, { type: "text" as const, content: event.data.content }],
                     thinkingStartedAt: m.thinkingStartedAt ?? Date.now(),
                   }
@@ -311,14 +342,31 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
             status: "running",
           };
           finalToolCalls.push(toolCall);
+          finalThinkingEntries = [...finalThinkingEntries, { type: "tool" as const, toolCall }];
+          finalParts = appendToolCallPart(finalParts, toolCall);
           updateMessages(currentSessionId, (prev) =>
             prev.map((m) =>
               m.id === assistantId
                 ? {
                     ...m,
+                    parts: appendToolCallPart(m.parts, toolCall),
                     toolCalls: [...m.toolCalls, toolCall],
                     thinkingEntries: [...m.thinkingEntries, { type: "tool" as const, toolCall }],
                     thinkingStartedAt: m.thinkingStartedAt ?? Date.now(),
+                  }
+                : m
+            )
+          );
+        } else if (event.type === "retrieval") {
+          finalSources = event.data.sources;
+          finalParts = appendSourceParts(finalParts, event.data.sources);
+          updateMessages(currentSessionId, (prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? {
+                    ...m,
+                    parts: appendSourceParts(m.parts, event.data.sources),
+                    sources: event.data.sources,
                   }
                 : m
             )
@@ -328,17 +376,22 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
           finalToolCalls = finalToolCalls.map((t) =>
             t.status === "running" ? {...t, status: "done" as const} : t
           );
+          finalThinkingEntries = markToolsDone(finalThinkingEntries);
+          finalParts = markRunningToolParts(finalParts, "done");
+          finalStatus = { type: "complete", reason: "stop" };
           updateMessages(currentSessionId, (prev) =>
             prev.map((m) =>
               m.id === assistantId
                 ? {
                     ...m,
+                    parts: markRunningToolParts(m.parts, "done"),
                     toolCalls: m.toolCalls.map((t) =>
                       t.status === "running"
                         ? {...t, status: "done" as const}
                         : t
                     ),
                     thinkingEntries: markToolsDone(m.thinkingEntries),
+                    status: { type: "complete", reason: "stop" },
                     thinkingDuration: m.thinkingStartedAt
                       ? (Date.now() - m.thinkingStartedAt) / 1000
                       : undefined,
@@ -355,19 +408,32 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
             );
             return updated;
           });
+          if (sessions.find((s) => s.id === currentSessionId)?.title === "New chat") {
+            window.setTimeout(() => {
+              fetchSessions().then(setSessions).catch(console.error);
+            }, 1500);
+          }
         } else if (event.type === "error") {
+          finalToolCalls = finalToolCalls.map((t) =>
+            t.status === "running" ? { ...t, status: "error" as const } : t
+          );
+          finalThinkingEntries = markToolsError(finalThinkingEntries);
+          finalParts = markRunningToolParts(finalParts, "error", event.data);
+          finalStatus = { type: "incomplete", reason: "error", error: event.data };
           updateMessages(currentSessionId, (prev) =>
             prev.map((m) =>
               m.id === assistantId
                 ? {
                     ...m,
                     content: m.content || `Error: ${event.data}`,
+                    parts: markRunningToolParts(m.parts, "error", event.data),
                     toolCalls: m.toolCalls.map((t) =>
                       t.status === "running"
                         ? {...t, status: "error" as const}
                         : t
                     ),
                     thinkingEntries: markToolsError(m.thinkingEntries),
+                    status: { type: "incomplete", reason: "error", error: event.data },
                   }
                 : m
             )
@@ -378,8 +444,16 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
       // Save both messages to DB after streaming completes
       // Replace local IDs with DB IDs so metadata PATCH works
       saveMessages(currentSessionId, [
-        {role: "user", content, toolCalls: []},
-        {role: "assistant", content: finalContent, toolCalls: finalToolCalls},
+        {role: "user", content, parts: [{ type: "text", text: content }], toolCalls: []},
+        {
+          role: "assistant",
+          content: finalContent,
+          parts: finalParts,
+          toolCalls: finalToolCalls,
+          thinkingEntries: finalThinkingEntries,
+          sources: finalSources,
+          status: finalStatus,
+        },
       ]).then((saved) => {
         if (saved.length === 2) {
           updateMessages(currentSessionId, (prev) =>
@@ -400,6 +474,7 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
             ? {
                 ...m,
                 content: m.content || `Failed to get response: ${message}`,
+                parts: markRunningToolParts(m.parts, "error", message),
                 toolCalls: m.toolCalls.map((t) =>
                   t.status === "running" ? {...t, status: "error" as const} : t
                 ),
@@ -408,6 +483,7 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
                     ? { ...e, toolCall: { ...e.toolCall, status: "error" as const } }
                     : e
                 ),
+                status: { type: "incomplete", reason: "error", error: message },
               }
             : m
         )
@@ -426,11 +502,7 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
     isRunning: isLoading,
     convertMessage,
     onNew: async (message) => {
-      // Extract text from the AppendMessage content parts
-      const text = message.content
-        .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
-        .map((part) => part.text)
-        .join('\n');
+      const text = extractComposerText(message);
       if (text) {
         setInputValue(text);
         // Use a microtask so inputValue state updates before handleSubmit reads it

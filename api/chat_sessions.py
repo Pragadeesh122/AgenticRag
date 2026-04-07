@@ -25,6 +25,11 @@ class MessageCreate(BaseModel):
     role: str
     content: str
     toolCalls: Optional[list] = None
+    parts: Optional[list] = None
+    status: Optional[dict] = None
+    thinkingEntries: Optional[list] = None
+    sources: Optional[list] = None
+    agentName: Optional[str] = None
     metadata: Optional[dict] = None
 
 class MessageUpdate(BaseModel):
@@ -151,7 +156,12 @@ async def get_messages(
             "role": m.role,
             "content": m.content,
             "toolCalls": m.tool_calls,
+            "parts": (m.metadata_ or {}).get("parts"),
+            "status": (m.metadata_ or {}).get("status"),
+            "thinkingEntries": (m.metadata_ or {}).get("thinkingEntries"),
+            "sources": (m.metadata_ or {}).get("sources"),
             "metadata": m.metadata_,
+            "agentName": (m.metadata_ or {}).get("agentName"),
             "createdAt": m.created_at.isoformat()
         }
         for m in msgs
@@ -172,13 +182,25 @@ async def save_messages(
     import uuid
     new_msgs = []
     for msg in messages:
+        metadata = dict(msg.metadata or {})
+        if msg.parts is not None:
+            metadata["parts"] = msg.parts
+        if msg.status is not None:
+            metadata["status"] = msg.status
+        if msg.thinkingEntries is not None:
+            metadata["thinkingEntries"] = msg.thinkingEntries
+        if msg.sources is not None:
+            metadata["sources"] = msg.sources
+        if msg.agentName is not None:
+            metadata["agentName"] = msg.agentName
+
         cm = ChatMessage(
             id=str(uuid.uuid4()),
             chat_session_id=session_id,
             role=msg.role,
             content=msg.content,
             tool_calls=msg.toolCalls or [],
-            metadata_=msg.metadata or {}
+            metadata_=metadata
         )
         db.add(cm)
         new_msgs.append({"id": cm.id, "role": cm.role})

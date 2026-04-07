@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from arq import create_pool
 from arq.connections import RedisSettings
 from typing import Optional, List
@@ -15,7 +15,7 @@ from database.core import get_db
 from database.models import User, Project, Document, ChatSession, ChatMessage
 from services.project_service import ProjectService
 from services.document_service import DocumentService
-from pipeline.storage import ensure_bucket, get_presigned_put_url
+from pipeline.storage import ensure_bucket, get_presigned_put_url, get_presigned_get_url
 from api.project_chat import project_chat_stream
 from tasks.document_tasks import process_document_task
 
@@ -50,6 +50,10 @@ class UploadInitRequest(BaseModel):
 class UploadConfirmRequest(BaseModel):
     documentId: str
     filename: str
+
+class DocumentReingestRequest(BaseModel):
+    filename: str
+    fileSize: int = 0
 
 class ProjectChatRequest(BaseModel):
     sessionId: str
@@ -264,6 +268,47 @@ async def remove_document(
     await doc_service.delete_document(project_id, doc_id, user.id)
     return {"status": "deleted"}
 
+@router.patch("/{project_id}/documents/{doc_id}/reingest")
+async def reingest_document(
+    project_id: str,
+    doc_id: str,
+    req: DocumentReingestRequest,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    project = await ProjectService(db).get_project(project_id, user.id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    ext = req.filename.rsplit(".", 1)[-1].lower() if "." in req.filename else ""
+    supported = {"pdf", "txt", "md", "csv", "docx"}
+    if ext not in supported:
+        raise HTTPException(400, f"Unsupported file type. Supported: {', '.join(supported)}")
+
+    doc_service = DocumentService(db)
+    doc = await doc_service.prepare_reingest(
+        project_id=project_id,
+        doc_id=doc_id,
+        user_id=user.id,
+        filename=req.filename,
+        file_type=ext,
+        file_size=req.fileSize,
+    )
+
+    object_key = f"{project_id}/{doc.id}.{ext}"
+    try:
+        ensure_bucket()
+        url = get_presigned_put_url(object_key)
+    except Exception as e:
+        logger.error(f"failed to generate reingest URL: {e}")
+        await doc_service.mark_failed(doc.id, "Failed to generate upload URL")
+        raise HTTPException(status_code=500, detail="Failed to generate upload URL")
+
+    return {
+        **_serialize_document(doc),
+        "uploadUrl": url,
+    }
+
 @router.get("/{project_id}/documents/{doc_id}/status")
 async def get_document_status(
     project_id: str,
@@ -286,6 +331,34 @@ async def get_document_status(
         "chunkStrategy": doc.chunk_strategy,
         "errorMessage": doc.error_message
     }
+
+
+@router.get("/{project_id}/documents/{doc_id}/download")
+async def get_document_download_url(
+    project_id: str,
+    doc_id: str,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    project = await ProjectService(db).get_project(project_id, user.id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    stmt = select(Document).where(Document.id == doc_id, Document.project_id == project_id)
+    doc = (await db.execute(stmt)).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    if doc.status != "ready":
+        raise HTTPException(409, "Document is not ready")
+
+    object_key = f"{project_id}/{doc.id}.{doc.file_type}"
+    try:
+        url = get_presigned_get_url(object_key, expires=900)
+    except Exception as e:
+        logger.error(f"failed to generate document download URL: {e}")
+        raise HTTPException(500, "Failed to generate document URL")
+
+    return {"url": url}
 
 # --- Project Chat Sessions ---
 @router.get("/{project_id}/sessions")
@@ -315,20 +388,35 @@ async def create_project_session(
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
-    from api.session import create_session
-    sid = create_session(str(user.id))
-    
-    new_id = str(uuid.uuid4())
-    session = ChatSession(
-        id=new_id,
-        user_id=user.id,
-        project_id=project_id,
-        title="New chat",
-        backend_session_id=sid
-    )
-    db.add(session)
-    await db.commit()
-    await db.refresh(session)
+    project = await ProjectService(db).get_project(project_id, user.id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    from api.session import create_project_session as create_backend_project_session
+
+    try:
+        sid = create_backend_project_session(project.name or "", str(user.id))
+    except Exception as e:
+        logger.error(f"failed to create backend project session: {e}")
+        raise HTTPException(500, "Failed to create backend session")
+
+    try:
+        new_id = str(uuid.uuid4())
+        session = ChatSession(
+            id=new_id,
+            user_id=user.id,
+            project_id=project_id,
+            title="New chat",
+            backend_session_id=sid
+        )
+        db.add(session)
+        await db.commit()
+        await db.refresh(session)
+    except Exception as e:
+        logger.error(f"failed to persist project chat session: {e}")
+        await db.rollback()
+        raise HTTPException(500, "Failed to create project session")
+
     return {
         "id": session.id,
         "projectId": session.project_id,
@@ -363,18 +451,29 @@ async def remove_project_session(
     return {"status": "ok"}
 
 @router.post("/{project_id}/chat")
-def project_chat_endpoint(
+async def project_chat_endpoint(
     project_id: str,
     req: ProjectChatRequest,
-    user: User = Depends(current_active_user)
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
 ):
     try:
+        project = await ProjectService(db).get_project(project_id, user.id)
+        if not project:
+            raise HTTPException(404, "Project not found")
+
+        chunk_count_stmt = select(func.coalesce(func.sum(Document.chunk_count), 0)).where(
+            Document.project_id == project_id,
+            Document.status == "ready",
+        )
+        chunk_count = int((await db.execute(chunk_count_stmt)).scalar_one() or 0)
+
         return StreamingResponse(
             project_chat_stream(
                 session_id=req.sessionId,
                 user_message=req.message,
                 project_id=project_id,
-                chunk_count=0,
+                chunk_count=chunk_count,
                 agent_name=req.agent
             ),
             media_type="text/event-stream"

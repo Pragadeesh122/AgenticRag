@@ -1,4 +1,24 @@
-import type { Session, Message, Project, ProjectDocument, RetrievalSource, AgentInfo, UserMemory, MemoryCategory } from './types';
+import type {
+  AssistantMessageStatus,
+  Message,
+  MessageMetadata,
+  MessagePart,
+  Project,
+  ProjectDocument,
+  RetrievalSource,
+  Session,
+  AgentInfo,
+  UserMemory,
+  MemoryCategory,
+} from './types';
+import {
+  buildAssistantPartsFromLegacy,
+  deriveSourcesFromParts,
+  deriveThinkingEntriesFromParts,
+  deriveToolCallsFromParts,
+  extractTextFromParts,
+  getDefaultAssistantStatus,
+} from './messageParts';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -88,7 +108,7 @@ export async function restoreBackendSession(
 
 export type SSEEvent =
   | { type: 'token'; data: string }
-  | { type: 'tool'; data: { name: string; args?: Record<string, string> } }
+  | { type: 'tool'; data: { name: string; args?: Record<string, unknown> } }
   | { type: 'thinking'; data: { content: string } }
   | { type: 'agent'; data: { name: string; description: string } }
   | { type: 'retrieval'; data: { sources: RetrievalSource[]; count: number } }
@@ -126,7 +146,7 @@ export async function streamChat(
     buffer = parts.pop() ?? '';
 
     for (const part of parts) {
-      const lines = part.trim().split('\n');
+      const lines = part.split('\n');
       let eventType = '';
       const dataLines: string[] = [];
 
@@ -214,19 +234,62 @@ export async function deleteChatSession(
 export async function fetchMessages(sessionId: string): Promise<Message[]> {
   const res = await apiFetch(`/api/chat/sessions/${sessionId}/messages`);
   if (!res.ok) return [];
-  const messages: Message[] = await res.json();
-  // Populate defaults for restored messages
-  return messages.map((m) => ({
-    ...m,
-    metadata: m.metadata ?? {},
-    thinkingEntries: m.thinkingEntries ?? [],
-    agentName: m.agentName ?? (m.metadata as Record<string, unknown>)?.agentName as string | undefined,
-  }));
+  const messages: Array<{
+    id: string;
+    role: Message['role'];
+    content: string;
+    toolCalls?: Message['toolCalls'];
+    parts?: MessagePart[];
+    status?: AssistantMessageStatus;
+    thinkingEntries?: Message['thinkingEntries'];
+    sources?: RetrievalSource[];
+    metadata?: MessageMetadata;
+    agentName?: string;
+    createdAt: string;
+  }> = await res.json();
+
+  return messages.map((message) => {
+    const metadata = message.metadata ?? {};
+    const parts =
+      message.parts ??
+      buildAssistantPartsFromLegacy({
+        content: message.content,
+        toolCalls: message.toolCalls ?? [],
+        thinkingEntries: message.thinkingEntries ?? [],
+        sources: message.sources ?? [],
+      });
+
+    const toolCalls = message.toolCalls ?? deriveToolCallsFromParts(parts);
+    const thinkingEntries = message.thinkingEntries ?? deriveThinkingEntriesFromParts(parts);
+    const sources = message.sources ?? deriveSourcesFromParts(parts);
+
+    return {
+      ...message,
+      content: message.content || extractTextFromParts(parts),
+      parts,
+      toolCalls,
+      thinkingEntries,
+      sources,
+      status: message.status ?? getDefaultAssistantStatus({ role: message.role, content: message.content || extractTextFromParts(parts) }),
+      metadata,
+      agentName: message.agentName ?? metadata.agentName,
+    };
+  });
 }
 
 export async function saveMessages(
   sessionId: string,
-  messages: Array<{ role: string; content: string; toolCalls?: unknown[]; metadata?: Record<string, unknown> }>
+  messages: Array<{
+    role: string;
+    content: string;
+    toolCalls?: unknown[];
+    parts?: MessagePart[];
+    status?: AssistantMessageStatus;
+    thinkingEntries?: Message['thinkingEntries'];
+    sources?: RetrievalSource[];
+    agentName?: string;
+    metadata?: Record<string, unknown>;
+  }>
 ): Promise<Array<{ id: string; role: string }>> {
   const res = await apiFetch(`/api/chat/sessions/${sessionId}/messages`, {
     method: 'POST',
@@ -334,6 +397,54 @@ export async function deleteDocument(projectId: string, docId: string): Promise<
   if (!res.ok) throw new Error('Failed to delete document');
 }
 
+export async function getDocumentDownloadUrl(
+  projectId: string,
+  docId: string
+): Promise<string> {
+  const res = await apiFetch(`/api/projects/${projectId}/documents/${docId}/download`);
+  if (!res.ok) throw new Error('Failed to get document URL');
+  const data = await res.json();
+  return data.url;
+}
+
+export async function reingestDocument(
+  projectId: string,
+  docId: string,
+  file: File
+): Promise<ProjectDocument> {
+  const initRes = await apiFetch(`/api/projects/${projectId}/documents/${docId}/reingest`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename: file.name, fileSize: file.size }),
+  });
+  if (!initRes.ok) {
+    const err = await initRes.json().catch(() => ({ error: 'Re-ingest failed' }));
+    throw new Error(err.error || 'Re-ingest failed');
+  }
+
+  const { uploadUrl, ...document } = await initRes.json();
+
+  const uploadRes = await fetch(uploadUrl, {
+    method: 'PUT',
+    mode: 'cors',
+    body: file,
+  });
+  if (!uploadRes.ok) {
+    throw new Error('Direct upload to storage failed');
+  }
+
+  const confirmRes = await apiFetch(`/api/projects/${projectId}/upload`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ documentId: document.id, filename: file.name }),
+  });
+  if (!confirmRes.ok) {
+    throw new Error('Failed to trigger ingestion');
+  }
+
+  return { ...document, status: 'processing' } as ProjectDocument;
+}
+
 export async function pollDocumentStatus(
   projectId: string,
   docId: string
@@ -432,7 +543,7 @@ export async function streamProjectChat(
     buffer = parts.pop() ?? '';
 
     for (const part of parts) {
-      const lines = part.trim().split('\n');
+      const lines = part.split('\n');
       let eventType = '';
       const dataLines: string[] = [];
 

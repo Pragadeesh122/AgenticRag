@@ -76,3 +76,44 @@ class DocumentService:
         await self.doc_repo.delete(doc)
         await self.session.commit()
         invalidate_project_cache(project_id)
+
+    async def prepare_reingest(
+        self,
+        project_id: str,
+        doc_id: str,
+        user_id: uuid.UUID,
+        filename: str,
+        file_type: str,
+        file_size: int,
+    ):
+        project = await self.proj_repo.get_by_id_for_user(project_id, user_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        doc = await self.doc_repo.get_by_id(doc_id)
+        if not doc or doc.project_id != project_id:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        old_object_key = f"{project_id}/{doc.id}.{doc.file_type}" if doc.file_type else None
+        if old_object_key:
+            try:
+                delete_object(old_object_key)
+            except Exception:
+                pass
+
+        try:
+            delete_document_vectors(project_id, doc_id)
+        except Exception:
+            pass
+
+        doc.filename = filename
+        doc.file_type = file_type
+        doc.file_size = file_size
+        doc.chunk_count = 0
+        doc.chunk_strategy = None
+        doc.error_message = None
+        doc.status = "uploading"
+        await self.session.commit()
+
+        invalidate_project_cache(project_id)
+        return doc

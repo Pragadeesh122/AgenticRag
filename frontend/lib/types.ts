@@ -13,7 +13,7 @@ export interface ToolCall {
   id: string;
   name: string;
   status: ToolStatus;
-  args?: Record<string, string>;
+  args?: Record<string, unknown>;
   startedAt?: number;
   completedAt?: number;
 }
@@ -27,12 +27,44 @@ export interface MessageMetadata {
   quizState?: Record<number, { selected: string | null; revealed: boolean; shortAnswer: string }>;
 }
 
+export type AssistantMessageStatus =
+  | { type: 'running' }
+  | { type: 'requires-action'; reason: 'tool-calls' | 'interrupt' }
+  | { type: 'complete'; reason: 'stop' | 'unknown' }
+  | { type: 'incomplete'; reason: 'cancelled' | 'tool-calls' | 'length' | 'content-filter' | 'other' | 'error'; error?: unknown };
+
+export type MessagePart =
+  | { type: 'text'; text: string; parentId?: string }
+  | { type: 'reasoning'; text: string; parentId?: string }
+  | {
+      type: 'tool-call';
+      toolCallId: string;
+      toolName: string;
+      args: Record<string, unknown>;
+      argsText: string;
+      result?: unknown;
+      isError?: boolean;
+      parentId?: string;
+    }
+  | {
+      type: 'source';
+      sourceType: 'url';
+      id: string;
+      url: string;
+      title?: string;
+      parentId?: string;
+    }
+  | { type: 'data'; name: string; data: unknown };
+
 export interface Message {
   id: string;
   role: MessageRole;
   content: string;
+  parts: MessagePart[];
   toolCalls: ToolCall[];
   thinkingEntries: ThinkingEntry[];
+  sources: RetrievalSource[];
+  status?: AssistantMessageStatus;
   thinkingStartedAt?: number;
   thinkingDuration?: number;
   metadata: MessageMetadata;

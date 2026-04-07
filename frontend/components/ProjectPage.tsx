@@ -1,7 +1,7 @@
 "use client";
 
 import {useState, useCallback, useEffect, useRef} from "react";
-import { signOut } from "@/lib/api";
+import {signOut} from "@/lib/api";
 import {CaretLeft} from "@phosphor-icons/react/dist/ssr/CaretLeft";
 import {CaretRight} from "@phosphor-icons/react/dist/ssr/CaretRight";
 import {ArrowLeft} from "@phosphor-icons/react/dist/ssr/ArrowLeft";
@@ -12,21 +12,43 @@ import {
   backendSessionExists,
   fetchAgents,
   uploadDocument,
+  reingestDocument,
   deleteDocument,
   pollDocumentStatus,
+  fetchProjectSessions,
   createProjectSession,
   deleteProjectSession,
   restoreBackendSession,
   streamProjectChat,
   fetchMessages,
   saveMessages,
-  updateChatSession,
 } from "@/lib/api";
-import type {Project, Session, Message, AgentInfo, ToolCall, ThinkingEntry} from "@/lib/types";
+import type {
+  Project,
+  Session,
+  Message,
+  AgentInfo,
+  ToolCall,
+  ThinkingEntry,
+  RetrievalSource,
+} from "@/lib/types";
 import Link from "next/link";
-import { AssistantRuntimeProvider, useExternalStoreRuntime } from "@assistant-ui/react";
-import { convertMessage } from "@/lib/chatRuntime";
+import {
+  AssistantRuntimeProvider,
+  useExternalStoreRuntime,
+} from "@assistant-ui/react";
+import {convertMessage} from "@/lib/chatRuntime";
 import Image from "next/image";
+import {
+  appendDataPart,
+  appendReasoningPart,
+  appendSourceParts,
+  appendTextPart,
+  appendToolCallPart,
+  buildAssistantPartsFromLegacy,
+  getDefaultAssistantStatus,
+  markRunningToolParts,
+} from "@/lib/messageParts";
 
 interface ProjectPageProps {
   initialProject: Project;
@@ -43,10 +65,27 @@ function generateLocalId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function getTitleFromContent(content: string): string {
-  const trimmed = content.trim();
-  if (trimmed.length <= 40) return trimmed;
-  return trimmed.slice(0, 40).trim() + "\u2026";
+function extractComposerText(message: {content: unknown}): string {
+  if (typeof message.content === "string") return message.content;
+  if (!Array.isArray(message.content)) return "";
+
+  return message.content
+    .filter(
+      (
+        part
+      ): part is {
+        type: "text";
+        text: string;
+      } =>
+        typeof part === "object" &&
+        part !== null &&
+        "type" in part &&
+        "text" in part &&
+        part.type === "text" &&
+        typeof part.text === "string"
+    )
+    .map((part) => part.text)
+    .join("\n");
 }
 
 export default function ProjectPage({
@@ -72,6 +111,7 @@ export default function ProjectPage({
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [reingestingDocumentId, setReingestingDocumentId] = useState<string | null>(null);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(
     null
   );
@@ -169,6 +209,30 @@ export default function ProjectPage({
         );
       } catch (err) {
         console.error("Delete failed:", err);
+      }
+    },
+    [projectId]
+  );
+
+  const handleReingestDocument = useCallback(
+    async (docId: string, file: File) => {
+      setReingestingDocumentId(docId);
+      try {
+        const doc = await reingestDocument(projectId, docId, file);
+        setProject((prev) =>
+          prev
+            ? {
+                ...prev,
+                documents: prev.documents.map((existing) =>
+                  existing.id === doc.id ? doc : existing
+                ),
+              }
+            : prev
+        );
+      } catch (err) {
+        console.error("Re-ingest failed:", err);
+      } finally {
+        setReingestingDocumentId(null);
       }
     },
     [projectId]
@@ -285,25 +349,14 @@ export default function ProjectPage({
       id: generateLocalId(),
       role: "user",
       content,
+      parts: [{type: "text", text: content}],
       toolCalls: [],
       thinkingEntries: [],
+      sources: [],
       metadata: {},
       createdAt: new Date().toISOString(),
     };
     updateMessages(currentSessionId, (prev) => [...prev, userMessage]);
-
-    // Update title if it's still "New chat"
-    if (currentSession && currentSession.title === "New chat") {
-      const newTitle = getTitleFromContent(content);
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.id === currentSessionId ? {...s, title: newTitle} : s
-        )
-      );
-      updateChatSession(currentSessionId, {title: newTitle}).catch(
-        console.error
-      );
-    }
 
     setInputValue("");
     setIsLoading(true);
@@ -314,8 +367,11 @@ export default function ProjectPage({
       id: assistantId,
       role: "assistant",
       content: "",
+      parts: [],
       toolCalls: [],
       thinkingEntries: [],
+      sources: [],
+      status: {type: "running"},
       metadata: {},
       createdAt: new Date().toISOString(),
     };
@@ -325,6 +381,13 @@ export default function ProjectPage({
     try {
       let finalContent = "";
       let detectedAgent = "";
+      let finalToolCalls: ToolCall[] = [];
+      let finalThinkingEntries: ThinkingEntry[] = [];
+      let finalSources: RetrievalSource[] = [];
+      let finalParts = buildAssistantPartsFromLegacy(assistantMessage);
+      let finalStatus = getDefaultAssistantStatus(assistantMessage) ?? {
+        type: "running" as const,
+      };
 
       await streamProjectChat(
         projectId,
@@ -334,26 +397,48 @@ export default function ProjectPage({
           const markToolsDone = (entries: ThinkingEntry[]): ThinkingEntry[] =>
             entries.map((e) =>
               e.type === "tool" && e.toolCall.status === "running"
-                ? { ...e, toolCall: { ...e.toolCall, status: "done" as const } }
+                ? {...e, toolCall: {...e.toolCall, status: "done" as const}}
+                : e
+            );
+          const markToolsError = (entries: ThinkingEntry[]): ThinkingEntry[] =>
+            entries.map((e) =>
+              e.type === "tool" && e.toolCall.status === "running"
+                ? {...e, toolCall: {...e.toolCall, status: "error" as const}}
                 : e
             );
 
           if (event.type === "token") {
             finalContent += event.data;
-            updateMessages(currentSessionId, (prev) =>
-              prev.map((m) =>
-                m.id === assistantId
-                  ? {...m, content: m.content + event.data}
-                  : m
-              )
-            );
-          } else if (event.type === "thinking") {
+            finalParts = appendTextPart(finalParts, event.data);
+            finalStatus = {type: "running"};
             updateMessages(currentSessionId, (prev) =>
               prev.map((m) =>
                 m.id === assistantId
                   ? {
                       ...m,
-                      thinkingEntries: [...m.thinkingEntries, { type: "text" as const, content: event.data.content }],
+                      content: m.content + event.data,
+                      parts: appendTextPart(m.parts, event.data),
+                      status: {type: "running"},
+                    }
+                  : m
+              )
+            );
+          } else if (event.type === "thinking") {
+            finalThinkingEntries = [
+              ...finalThinkingEntries,
+              {type: "text" as const, content: event.data.content},
+            ];
+            finalParts = appendReasoningPart(finalParts, event.data.content);
+            updateMessages(currentSessionId, (prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      parts: appendReasoningPart(m.parts, event.data.content),
+                      thinkingEntries: [
+                        ...m.thinkingEntries,
+                        {type: "text" as const, content: event.data.content},
+                      ],
                       thinkingStartedAt: m.thinkingStartedAt ?? Date.now(),
                     }
                   : m
@@ -364,17 +449,38 @@ export default function ProjectPage({
             const agentTool: ToolCall = {
               id: generateLocalId(),
               name: `${event.data.name} agent`,
-              args: { description: event.data.description },
+              args: {description: event.data.description},
               status: "running",
             };
+            finalToolCalls = [...finalToolCalls, agentTool];
+            finalThinkingEntries = [
+              ...finalThinkingEntries,
+              {type: "tool" as const, toolCall: agentTool},
+            ];
+            finalParts = appendDataPart(
+              appendToolCallPart(finalParts, agentTool),
+              "agent",
+              {name: event.data.name, description: event.data.description}
+            );
             updateMessages(currentSessionId, (prev) =>
               prev.map((m) =>
                 m.id === assistantId
                   ? {
                       ...m,
                       agentName: event.data.name,
+                      parts: appendDataPart(
+                        appendToolCallPart(m.parts, agentTool),
+                        "agent",
+                        {
+                          name: event.data.name,
+                          description: event.data.description,
+                        }
+                      ),
                       toolCalls: [...m.toolCalls, agentTool],
-                      thinkingEntries: [...m.thinkingEntries, { type: "tool" as const, toolCall: agentTool }],
+                      thinkingEntries: [
+                        ...m.thinkingEntries,
+                        {type: "tool" as const, toolCall: agentTool},
+                      ],
                       thinkingStartedAt: m.thinkingStartedAt ?? Date.now(),
                     }
                   : m
@@ -386,11 +492,35 @@ export default function ProjectPage({
               name: `searched ${event.data.count} passages`,
               status: "done",
             };
+            finalSources = event.data.sources;
+            finalToolCalls = finalToolCalls
+              .map((t) =>
+                t.status === "running" ? {...t, status: "done" as const} : t
+              )
+              .concat(retrievalTool);
+            finalThinkingEntries = markToolsDone(finalThinkingEntries).concat({
+              type: "tool" as const,
+              toolCall: retrievalTool,
+            });
+            finalParts = appendSourceParts(
+              appendToolCallPart(
+                markRunningToolParts(finalParts, "done"),
+                retrievalTool
+              ),
+              event.data.sources
+            );
             updateMessages(currentSessionId, (prev) =>
               prev.map((m) =>
                 m.id === assistantId
                   ? {
                       ...m,
+                      parts: appendSourceParts(
+                        appendToolCallPart(
+                          markRunningToolParts(m.parts, "done"),
+                          retrievalTool
+                        ),
+                        event.data.sources
+                      ),
                       toolCalls: m.toolCalls
                         .map((t) =>
                           t.status === "running"
@@ -398,24 +528,35 @@ export default function ProjectPage({
                             : t
                         )
                         .concat(retrievalTool),
-                      thinkingEntries: markToolsDone(m.thinkingEntries)
-                        .concat({ type: "tool" as const, toolCall: retrievalTool }),
+                      thinkingEntries: markToolsDone(m.thinkingEntries).concat({
+                        type: "tool" as const,
+                        toolCall: retrievalTool,
+                      }),
+                      sources: event.data.sources,
                     }
                   : m
               )
             );
           } else if (event.type === "done") {
+            finalToolCalls = finalToolCalls.map((t) =>
+              t.status === "running" ? {...t, status: "done" as const} : t
+            );
+            finalThinkingEntries = markToolsDone(finalThinkingEntries);
+            finalParts = markRunningToolParts(finalParts, "done");
+            finalStatus = {type: "complete", reason: "stop"};
             updateMessages(currentSessionId, (prev) =>
               prev.map((m) =>
                 m.id === assistantId
                   ? {
                       ...m,
+                      parts: markRunningToolParts(m.parts, "done"),
                       toolCalls: m.toolCalls.map((t) =>
                         t.status === "running"
                           ? {...t, status: "done" as const}
                           : t
                       ),
                       thinkingEntries: markToolsDone(m.thinkingEntries),
+                      status: {type: "complete", reason: "stop"},
                       thinkingDuration: m.thinkingStartedAt
                         ? (Date.now() - m.thinkingStartedAt) / 1000
                         : undefined,
@@ -432,13 +573,29 @@ export default function ProjectPage({
               );
               return updated;
             });
+            if (sessions.find((s) => s.id === currentSessionId)?.title === "New chat") {
+              window.setTimeout(() => {
+                fetchProjectSessions(projectId).then(setSessions).catch(console.error);
+              }, 1500);
+            }
           } else if (event.type === "error") {
+            finalToolCalls = finalToolCalls.map((t) =>
+              t.status === "running" ? {...t, status: "error" as const} : t
+            );
+            finalThinkingEntries = markToolsError(finalThinkingEntries);
+            finalParts = markRunningToolParts(finalParts, "error", event.data);
+            finalStatus = {
+              type: "incomplete",
+              reason: "error",
+              error: event.data,
+            };
             updateMessages(currentSessionId, (prev) =>
               prev.map((m) =>
                 m.id === assistantId
                   ? {
                       ...m,
                       content: m.content || `Error: ${event.data}`,
+                      parts: markRunningToolParts(m.parts, "error", event.data),
                       toolCalls: m.toolCalls.map((t) =>
                         t.status === "running"
                           ? {...t, status: "error" as const}
@@ -446,9 +603,20 @@ export default function ProjectPage({
                       ),
                       thinkingEntries: m.thinkingEntries.map((e) =>
                         e.type === "tool" && e.toolCall.status === "running"
-                          ? { ...e, toolCall: { ...e.toolCall, status: "error" as const } }
+                          ? {
+                              ...e,
+                              toolCall: {
+                                ...e.toolCall,
+                                status: "error" as const,
+                              },
+                            }
                           : e
                       ),
+                      status: {
+                        type: "incomplete",
+                        reason: "error",
+                        error: event.data,
+                      },
                     }
                   : m
               )
@@ -461,24 +629,36 @@ export default function ProjectPage({
       // Save messages to DB (persist agentName in metadata for session restore)
       // Replace local IDs with DB IDs so PATCH for quiz state works
       saveMessages(currentSessionId, [
-        {role: "user", content, toolCalls: []},
+        {
+          role: "user",
+          content,
+          parts: [{type: "text", text: content}],
+          toolCalls: [],
+        },
         {
           role: "assistant",
           content: finalContent,
-          toolCalls: [],
+          parts: finalParts,
+          toolCalls: finalToolCalls,
+          thinkingEntries: finalThinkingEntries,
+          sources: finalSources,
+          status: finalStatus,
+          agentName: detectedAgent || undefined,
           metadata: detectedAgent ? {agentName: detectedAgent} : undefined,
         },
-      ]).then((saved) => {
-        if (saved.length === 2) {
-          updateMessages(currentSessionId, (prev) =>
-            prev.map((m) => {
-              if (m.id === userMessage.id) return { ...m, dbId: saved[0].id };
-              if (m.id === assistantId) return { ...m, dbId: saved[1].id };
-              return m;
-            })
-          );
-        }
-      }).catch(console.error);
+      ])
+        .then((saved) => {
+          if (saved.length === 2) {
+            updateMessages(currentSessionId, (prev) =>
+              prev.map((m) => {
+                if (m.id === userMessage.id) return {...m, dbId: saved[0].id};
+                if (m.id === assistantId) return {...m, dbId: saved[1].id};
+                return m;
+              })
+            );
+          }
+        })
+        .catch(console.error);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
       updateMessages(currentSessionId, (prev) =>
@@ -487,14 +667,19 @@ export default function ProjectPage({
             ? {
                 ...m,
                 content: m.content || `Failed to get response: ${message}`,
+                parts: markRunningToolParts(m.parts, "error", message),
                 toolCalls: m.toolCalls.map((t) =>
                   t.status === "running" ? {...t, status: "error" as const} : t
                 ),
                 thinkingEntries: m.thinkingEntries.map((e) =>
                   e.type === "tool" && e.toolCall.status === "running"
-                    ? { ...e, toolCall: { ...e.toolCall, status: "error" as const } }
+                    ? {
+                        ...e,
+                        toolCall: {...e.toolCall, status: "error" as const},
+                      }
                     : e
                 ),
+                status: {type: "incomplete", reason: "error", error: message},
               }
             : m
         )
@@ -523,11 +708,7 @@ export default function ProjectPage({
     isRunning: isLoading,
     convertMessage,
     onNew: async (message) => {
-      // Extract text from the AppendMessage content parts
-      const text = message.content
-        .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
-        .map((part) => part.text)
-        .join('\n');
+      const text = extractComposerText(message);
       if (text) {
         setInputValue(text);
         // Use a microtask so inputValue state updates before handleSubmit reads it
@@ -552,8 +733,10 @@ export default function ProjectPage({
             selectedAgent={selectedAgent}
             onSelectAgent={setSelectedAgent}
             onUploadFile={handleUploadFile}
+            onReingestDocument={handleReingestDocument}
             onDeleteDocument={handleDeleteDocument}
             isUploading={isUploading}
+            reingestingDocumentId={reingestingDocumentId}
             sessions={sessions}
             activeSessionId={activeSessionId}
             onSelectSession={handleSelectSession}
@@ -579,7 +762,7 @@ export default function ProjectPage({
           </button>
 
           <Link
-            href='/'
+            href='/chat'
             className='p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-white/8 transition-colors duration-100'
             aria-label='Back to chats'>
             <ArrowLeft size={18} aria-hidden='true' />
@@ -632,6 +815,8 @@ export default function ProjectPage({
               inputValue={inputValue}
               onInputChange={setInputValue}
               onSubmit={handleSubmit}
+              projectId={projectId}
+              projectDocuments={project.documents}
             />
           </AssistantRuntimeProvider>
         </div>

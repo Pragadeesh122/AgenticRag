@@ -19,6 +19,24 @@ def ensure_bucket() -> None:
         logger.info(f"created bucket '{BUCKET_NAME}'")
 
 
+def _rewrite_public_base(url: str) -> str:
+    public_base = os.getenv("MINIO_PUBLIC_BASE_URL")
+    if not public_base:
+        return url
+
+    signed = urlsplit(url)
+    public = urlsplit(public_base)
+    return urlunsplit(
+        (
+            public.scheme or signed.scheme,
+            public.netloc or public.path,
+            signed.path,
+            signed.query,
+            signed.fragment,
+        )
+    )
+
+
 def get_presigned_put_url(object_key: str, expires: int = 3600) -> str:
     """Generate a presigned PUT URL for direct browser upload.
 
@@ -35,21 +53,18 @@ def get_presigned_put_url(object_key: str, expires: int = 3600) -> str:
         object_key,
         expires=timedelta(seconds=expires),
     )
-    public_base = os.getenv("MINIO_PUBLIC_BASE_URL")
-    if not public_base:
-        return url
+    return _rewrite_public_base(url)
 
-    signed = urlsplit(url)
-    public = urlsplit(public_base)
-    return urlunsplit(
-        (
-            public.scheme or signed.scheme,
-            public.netloc or public.path,
-            signed.path,
-            signed.query,
-            signed.fragment,
-        )
+
+def get_presigned_get_url(object_key: str, expires: int = 3600) -> str:
+    """Generate a presigned GET URL for browser document viewing/downloading."""
+    ensure_bucket()
+    url = minio_client.presigned_get_object(
+        BUCKET_NAME,
+        object_key,
+        expires=timedelta(seconds=expires),
     )
+    return _rewrite_public_base(url)
 
 
 def download_to_bytes(object_key: str) -> bytes:

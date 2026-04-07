@@ -9,6 +9,7 @@ import { FilePdf } from '@phosphor-icons/react/dist/ssr/FilePdf';
 import { FileCsv } from '@phosphor-icons/react/dist/ssr/FileCsv';
 import { FileDoc } from '@phosphor-icons/react/dist/ssr/FileDoc';
 import { FileText } from '@phosphor-icons/react/dist/ssr/FileText';
+import { ArrowClockwise } from '@phosphor-icons/react/dist/ssr/ArrowClockwise';
 import { SpinnerGap } from '@phosphor-icons/react/dist/ssr/SpinnerGap';
 import { CheckCircle } from '@phosphor-icons/react/dist/ssr/CheckCircle';
 import { XCircle } from '@phosphor-icons/react/dist/ssr/XCircle';
@@ -71,8 +72,10 @@ interface ProjectSidebarProps {
   selectedAgent: string | null;
   onSelectAgent: (name: string | null) => void;
   onUploadFile: (file: File) => void;
+  onReingestDocument: (docId: string, file: File) => void;
   onDeleteDocument: (docId: string) => void;
   isUploading: boolean;
+  reingestingDocumentId: string | null;
   sessions: Session[];
   activeSessionId: string | null;
   onSelectSession: (id: string) => void;
@@ -86,8 +89,10 @@ export default function ProjectSidebar({
   selectedAgent,
   onSelectAgent,
   onUploadFile,
+  onReingestDocument,
   onDeleteDocument,
   isUploading,
+  reingestingDocumentId,
   sessions,
   activeSessionId,
   onSelectSession,
@@ -95,7 +100,9 @@ export default function ProjectSidebar({
   onDeleteSession,
 }: ProjectSidebarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const replaceFileInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [replaceTargetId, setReplaceTargetId] = useState<string | null>(null);
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -108,6 +115,15 @@ export default function ProjectSidebar({
     const file = e.target.files?.[0];
     if (file) onUploadFile(file);
     e.target.value = '';
+  };
+
+  const handleReplaceFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && replaceTargetId) {
+      onReingestDocument(replaceTargetId, file);
+    }
+    e.target.value = '';
+    setReplaceTargetId(null);
   };
 
   const readyDocs = project.documents.filter((d) => d.status === 'ready');
@@ -254,6 +270,13 @@ export default function ProjectSidebar({
               accept=".pdf,.txt,.md,.csv,.docx"
               className="hidden"
             />
+            <input
+              ref={replaceFileInputRef}
+              type="file"
+              onChange={handleReplaceFileChange}
+              accept=".pdf,.txt,.md,.csv,.docx"
+              className="hidden"
+            />
             {isUploading ? (
               <SpinnerGap size={20} className="text-violet-400 animate-spin" />
             ) : (
@@ -279,6 +302,21 @@ export default function ProjectSidebar({
                     </p>
                   </div>
                   <StatusBadge status={doc.status} />
+                  <button
+                    onClick={() => {
+                      setReplaceTargetId(doc.id);
+                      replaceFileInputRef.current?.click();
+                    }}
+                    disabled={isUploading || reingestingDocumentId === doc.id}
+                    aria-label={`Replace ${doc.filename}`}
+                    className="p-1 rounded opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-violet-300 transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {reingestingDocumentId === doc.id ? (
+                      <SpinnerGap size={13} className="animate-spin" />
+                    ) : (
+                      <ArrowClockwise size={13} />
+                    )}
+                  </button>
                   <button
                     onClick={() => onDeleteDocument(doc.id)}
                     aria-label={`Delete ${doc.filename}`}

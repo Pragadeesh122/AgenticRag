@@ -1,5 +1,6 @@
 import type { ThreadMessageLike } from '@assistant-ui/react';
 import type { Message } from './types';
+import { buildAssistantPartsFromLegacy, getDefaultAssistantStatus } from './messageParts';
 
 // Content part types that ThreadMessageLike accepts
 type ContentPart = NonNullable<
@@ -14,51 +15,36 @@ type ContentPart = NonNullable<
  * array that assistant-ui expects.
  */
 export function convertMessage(message: Message): ThreadMessageLike {
-  // For user messages, content is simple text
   if (message.role === 'user') {
     return {
       id: message.id,
       role: 'user',
-      content: message.content,
+      content: [{ type: 'text', text: message.content }],
       createdAt: new Date(message.createdAt),
+      metadata: {
+        custom: {
+          dbId: message.dbId,
+        },
+      },
     };
   }
 
-  // For assistant messages, build a mutable content parts array
-  const parts: ContentPart[] = [];
-
-  // Add thinking/reasoning entries first (they appear before the text)
-  for (const entry of message.thinkingEntries) {
-    if (entry.type === 'text') {
-      parts.push({
-        type: 'data-thinking' as const,
-        data: { content: entry.content },
-      } as ContentPart);
-    } else if (entry.type === 'tool') {
-      parts.push({
-        type: 'tool-call' as const,
-        toolCallId: entry.toolCall.id,
-        toolName: entry.toolCall.name,
-        args: entry.toolCall.args ?? {},
-        result: entry.toolCall.status === 'done'
-          ? { status: 'done' }
-          : entry.toolCall.status === 'error'
-            ? { status: 'error' }
-            : undefined,
-      });
-    }
-  }
-
-  // Add the main text content
-  if (message.content) {
-    parts.push({ type: 'text' as const, text: message.content });
-  }
+  const parts = (message.parts.length > 0
+    ? message.parts
+    : buildAssistantPartsFromLegacy(message)) as ContentPart[];
 
   return {
     id: message.id,
     role: 'assistant',
-    content: parts.length > 0 ? parts : message.content,
+    content: parts.length > 0 ? parts : [{ type: 'text' as const, text: message.content }],
     createdAt: new Date(message.createdAt),
-    status: message.content ? { type: 'complete', reason: 'stop' } : { type: 'running' },
+    status: message.status ?? getDefaultAssistantStatus(message) ?? { type: 'running' },
+    metadata: {
+      custom: {
+        dbId: message.dbId,
+        agentName: message.agentName,
+        sources: message.sources,
+      },
+    },
   };
 }

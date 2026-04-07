@@ -7,7 +7,7 @@ import { Table } from '@phosphor-icons/react/dist/ssr/Table';
 import { Compass } from '@phosphor-icons/react/dist/ssr/Compass';
 import { Sparkle } from '@phosphor-icons/react/dist/ssr/Sparkle';
 import { ThreadPrimitive } from '@assistant-ui/react';
-import type { Message } from '@/lib/types';
+import type { Message, ProjectDocument } from '@/lib/types';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
 
@@ -90,6 +90,8 @@ interface ChatAreaProps {
   onInputChange: (value: string) => void;
   onSubmit: () => void;
   onStop?: () => void;
+  projectId?: string;
+  projectDocuments?: ProjectDocument[];
 }
 
 export default function ChatArea({
@@ -101,6 +103,8 @@ export default function ChatArea({
   onInputChange,
   onSubmit,
   onStop,
+  projectId,
+  projectDocuments,
 }: ChatAreaProps) {
   const inputRef = useRef<HTMLDivElement>(null);
 
@@ -234,6 +238,8 @@ export default function ChatArea({
                       message={message}
                       isStreaming={streamingMessageId === message.id}
                       isLast={index === messages.length - 1}
+                      projectId={projectId}
+                      projectDocuments={projectDocuments}
                     />
                   );
                 }}
