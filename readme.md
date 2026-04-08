@@ -39,5 +39,16 @@ Notes:
 
 - The compose file reads secrets and API keys from the root `.env`.
 - `.env` is excluded from the Docker build context so secrets are not baked into images.
-- OpenAI, Pinecone, and Google OAuth remain external services and still need valid credentials in `.env`.
+- LLM selection is model-driven (no required provider env flags):
+  - Pass model names directly to calls (`gpt-4o-mini`, `claude-...`, `gemini-...`, `grok-...`).
+  - You can also use explicit provider prefixes (`openai/gpt-4o-mini`, `anthropic/claude-...`).
+  - If model is omitted, fallback defaults are used:
+    - chat: `openai/gpt-4o-mini`
+    - embeddings: `openai/text-embedding-3-large`
+- If you switch embedding models/providers, ensure vector dimensions match:
+  - `DENSE_EMBEDDING_DIMENSION` for Pinecone dense index
+  - `SMALL_EMBEDDING_DIMENSION` for Redis semantic caches
 - Document ingestion defaults to the ARQ worker through Redis. For a no-worker fallback, set `DOCUMENT_INGEST_MODE=background`.
+- If you run the backend outside Docker after changing Python dependencies, run:
+  - `uv sync`
+  - `uv run crawl4ai-setup`
