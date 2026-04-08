@@ -5,14 +5,16 @@ import asyncio
 import base64
 from datetime import datetime
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout
-from clients import openai_client
+from clients import llm_client
 from prompts.browser_agent import BROWSER_AGENT, BROWSER_VISION_FALLBACK
+from llm.response_utils import extract_first_text
 
 logger = logging.getLogger("browser-agent")
 
 SCREENSHOTS_DIR = "browser_screenshots"
 ACTION_TIMEOUT = 5000  # 5s per action — fail fast, don't hang
 MAX_ACTIONS = 15  # safety limit to prevent infinite loops
+DEFAULT_HEADLESS = os.getenv("PLAYWRIGHT_HEADLESS", "true").lower() != "false"
 
 SCHEMA = {
     "type": "function",
@@ -47,7 +49,6 @@ SCHEMA = {
 CACHEABLE = False
 
 
-
 def _decide_next(goal: str, ax_tree: str, history: list[str]) -> dict:
     """Ask LLM what to do next given the current page state."""
     history_str = "\n".join(f"  {i + 1}. {h}" for i, h in enumerate(history))
@@ -62,8 +63,8 @@ Current page accessibility tree:
 
 What is the next action to take?"""
 
-    response = openai_client.chat.completions.create(
-        model="gpt-4o-mini",
+    response = llm_client.chat.completions.create(
+        model="claude-haiku-4-5",
         messages=[
             {"role": "system", "content": BROWSER_AGENT},
             {"role": "user", "content": user},
@@ -71,7 +72,7 @@ What is the next action to take?"""
         response_format={"type": "json_object"},
     )
 
-    return json.loads(response.choices[0].message.content)
+    return json.loads(extract_first_text(response, "{}"))
 
 
 async def _locate(page, action: dict):
@@ -134,8 +135,7 @@ async def _vision_fallback(page, goal: str, history: list[str], error: str) -> d
 
     history_str = "\n".join(f"  {i + 1}. {h}" for i, h in enumerate(history))
 
-    response = openai_client.chat.completions.create(
-        model="gpt-4o-mini",
+    response = llm_client.chat.completions.create(
         messages=[
             {
                 "role": "user",
@@ -158,14 +158,14 @@ async def _vision_fallback(page, goal: str, history: list[str], error: str) -> d
         response_format={"type": "json_object"},
     )
 
-    return json.loads(response.choices[0].message.content)
+    return json.loads(extract_first_text(response, "{}"))
 
 
 async def _run_browser_task(url: str, goal: str) -> str:
     """Autonomous browser agent — loops: snapshot → decide → act until done."""
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            headless=False,
+            headless=DEFAULT_HEADLESS,
             ignore_default_args=["--enable-automation"],
             args=["--disable-blink-features=AutomationControlled"],
         )
@@ -190,8 +190,10 @@ async def _run_browser_task(url: str, goal: str) -> str:
 
                 # Ask LLM what to do next
                 action = _decide_next(goal, ax_tree, history)
-                logger.info(f"action {step + 1}: {action.get('action')} {action.get('role', '')}"
-                            f"[{action.get('name', '')}] — {action.get('reasoning', '')[:80]}")
+                logger.info(
+                    f"action {step + 1}: {action.get('action')} {action.get('role', '')}"
+                    f"[{action.get('name', '')}] — {action.get('reasoning', '')[:80]}"
+                )
 
                 # Check if done
                 if action.get("action") == "done":
@@ -213,13 +215,19 @@ async def _run_browser_task(url: str, goal: str) -> str:
                 except Exception as e:
                     error_msg = str(e)
                     logger.warning(f"action failed: {error_msg}")
-                    history.append(f"FAILED: {action.get('action')} {action.get('role', '')}[{action.get('name', '')}] — {error_msg}")
+                    history.append(
+                        f"FAILED: {action.get('action')} {action.get('role', '')}[{action.get('name', '')}] — {error_msg}"
+                    )
 
                     # Try vision fallback
                     try:
-                        fallback_action = await _vision_fallback(page, goal, history, error_msg)
+                        fallback_action = await _vision_fallback(
+                            page, goal, history, error_msg
+                        )
                         if fallback_action.get("action") == "done":
-                            history.append(f"DONE — {fallback_action.get('summary', '')}")
+                            history.append(
+                                f"DONE — {fallback_action.get('summary', '')}"
+                            )
                             break
                         result = await _execute(page, fallback_action)
                         history.append(f"(via screenshot) {result}")

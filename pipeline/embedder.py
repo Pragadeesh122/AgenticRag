@@ -1,16 +1,18 @@
 """Dense + sparse embedding generation for hybrid search."""
 
 import logging
-from clients import openai_client, pinecone_client
+import os
+from clients import llm_client, pinecone_client
+from llm.response_utils import extract_embedding_vectors
 
 logger = logging.getLogger("pipeline.embedder")
 
-DENSE_MODEL = "text-embedding-3-large"
-DENSE_DIMENSION = 3072
+DENSE_MODEL = os.getenv("DENSE_EMBEDDING_MODEL", "text-embedding-3-large")
+DENSE_DIMENSION = int(os.getenv("DENSE_EMBEDDING_DIMENSION", 3072))
 SPARSE_MODEL = "pinecone-sparse-english-v0"
 
 # Max texts per API call (Pinecone sparse limit is 96)
-OPENAI_BATCH_SIZE = 96
+EMBEDDING_BATCH_SIZE = 96
 
 
 def embed_dense(texts: list[str]) -> list[list[float]]:
@@ -20,13 +22,13 @@ def embed_dense(texts: list[str]) -> list[list[float]]:
     """
     all_embeddings = []
 
-    for i in range(0, len(texts), OPENAI_BATCH_SIZE):
-        batch = texts[i : i + OPENAI_BATCH_SIZE]
-        response = openai_client.embeddings.create(input=batch, model=DENSE_MODEL)
-        batch_embeddings = [e.embedding for e in response.data]
+    for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+        batch = texts[i : i + EMBEDDING_BATCH_SIZE]
+        response = llm_client.embeddings.create(input=batch, model=DENSE_MODEL)
+        batch_embeddings = extract_embedding_vectors(response)
         all_embeddings.extend(batch_embeddings)
         logger.info(
-            f"dense batch {i // OPENAI_BATCH_SIZE + 1}: "
+            f"dense batch {i // EMBEDDING_BATCH_SIZE + 1}: "
             f"{len(batch)} texts embedded"
         )
 
@@ -40,8 +42,8 @@ def embed_sparse(texts: list[str]) -> list[dict]:
     """
     all_sparse = []
 
-    for i in range(0, len(texts), OPENAI_BATCH_SIZE):
-        batch = texts[i : i + OPENAI_BATCH_SIZE]
+    for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+        batch = texts[i : i + EMBEDDING_BATCH_SIZE]
         response = pinecone_client.inference.embed(
             model=SPARSE_MODEL,
             inputs=batch,
@@ -53,7 +55,7 @@ def embed_sparse(texts: list[str]) -> list[dict]:
                 "values": embedding.sparse_values,
             })
         logger.info(
-            f"sparse batch {i // OPENAI_BATCH_SIZE + 1}: "
+            f"sparse batch {i // EMBEDDING_BATCH_SIZE + 1}: "
             f"{len(batch)} texts embedded"
         )
 
@@ -62,8 +64,8 @@ def embed_sparse(texts: list[str]) -> list[dict]:
 
 def embed_query_dense(query: str) -> list[float]:
     """Embed a single query string with the dense model."""
-    response = openai_client.embeddings.create(input=query, model=DENSE_MODEL)
-    return response.data[0].embedding
+    response = llm_client.embeddings.create(input=query, model=DENSE_MODEL)
+    return extract_embedding_vectors(response)[0]
 
 
 def embed_query_sparse(query: str) -> dict:

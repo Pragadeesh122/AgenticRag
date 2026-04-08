@@ -1,6 +1,6 @@
 """General conversation test — no specialized tools should fire."""
 
-from clients import openai_client
+from clients import llm_client
 from prompts import CHAT_AGENT
 from test_suite.orchestrator import start_orchestrator, stop_orchestrator, send_prompt
 
@@ -18,7 +18,7 @@ def run(n: int = 5) -> list[dict]:
     ]
 
     for i in range(n):
-        chat_response = openai_client.chat.completions.create(
+        chat_response = llm_client.chat.completions.create(
             model="gpt-5.4-mini",
             messages=chat_agent_messages,
         )

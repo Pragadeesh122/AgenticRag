@@ -1,8 +1,9 @@
 import requests
 import os
 import logging
-from clients import openai_client
+from clients import llm_client
 from prompts.search_summarizer import SEARCH_SUMMARIZER
+from llm.response_utils import extract_first_text, usage_tokens
 
 logger = logging.getLogger("search-agent")
 
@@ -67,8 +68,7 @@ def search(query: str) -> str:
         return f"No search results found for: '{query}'"
 
     try:
-        llm_response = openai_client.chat.completions.create(
-            model="gpt-5.4-mini",
+        llm_response = llm_client.chat.completions.create(
             messages=[
                 {
                     "role": "system",
@@ -77,11 +77,12 @@ def search(query: str) -> str:
                 {"role": "user", "content": str(results)},
             ],
         )
-
-        logger.info(
-            f"summarize: {llm_response.usage.prompt_tokens} in, {llm_response.usage.completion_tokens} out"
+        prompt_tokens, completion_tokens = usage_tokens(
+            getattr(llm_response, "usage", None) or {}
         )
-        return llm_response.choices[0].message.content
+
+        logger.info(f"summarize: {prompt_tokens} in, {completion_tokens} out")
+        return extract_first_text(llm_response, "")
     except Exception as e:
         logger.error(f"summarization failed: {e}")
         return str(results)

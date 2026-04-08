@@ -1,6 +1,7 @@
 import json
 import logging
-from clients import openai_client
+from clients import llm_client
+from llm.response_utils import extract_first_text, usage_tokens
 
 logger = logging.getLogger("orchestrator")
 
@@ -26,8 +27,7 @@ def summarize_messages(messages):
 
     logger.info("summarizing older messages to reduce token usage")
     try:
-        summary_response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+        summary_response = llm_client.chat.completions.create(
             messages=[
                 {
                     "role": "system",
@@ -37,9 +37,12 @@ def summarize_messages(messages):
             ],
         )
 
-        summary = summary_response.choices[0].message.content
+        summary = extract_first_text(summary_response, "")
+        prompt_tokens, completion_tokens = usage_tokens(
+            getattr(summary_response, "usage", None) or {}
+        )
         logger.info(
-            f"summary tokens: {summary_response.usage.prompt_tokens} in, {summary_response.usage.completion_tokens} out"
+            f"summary tokens: {prompt_tokens} in, {completion_tokens} out"
         )
 
         return [

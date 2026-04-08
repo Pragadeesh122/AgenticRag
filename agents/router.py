@@ -1,9 +1,10 @@
 """Agent router — classifies user intent and selects the appropriate agent."""
 
 import logging
-from clients import openai_client
+from clients import llm_client
 from agents.registry import AGENTS
 from agents.base import Agent
+from llm.response_utils import extract_first_text
 
 logger = logging.getLogger("agents.router")
 
@@ -37,13 +38,12 @@ def classify_intent(messages: list[dict]) -> str:
                     "content": msg["content"][:300],
                 })
 
-        response = openai_client.chat.completions.create(
-            model="gpt-5.4-mini",
+        response = llm_client.chat.completions.create(
             messages=classification_messages,
             max_completion_tokens=10,
             temperature=0,
         )
-        agent_name = response.choices[0].message.content.strip().lower()
+        agent_name = extract_first_text(response, "").strip().lower()
 
         if agent_name in AGENTS:
             logger.info(f"classified intent → {agent_name}")

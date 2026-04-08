@@ -6,6 +6,7 @@ from utils.summarizer import summarize_messages
 from utils.streaming import stream_response, ToolCallProxy
 from memory import get_user_memory, extract_and_save_memories
 from prompts import ORCHESTRATOR
+from llm.response_utils import usage_tokens
 
 logging.basicConfig(level=logging.INFO, format="%(name)s | %(message)s")
 logger = logging.getLogger("orchestrator")
@@ -44,7 +45,7 @@ def main():
             while True:
                 content, tool_calls, usage = stream_response(messages)
                 if usage:
-                    prompt_tokens = usage.prompt_tokens
+                    prompt_tokens, _ = usage_tokens(usage)
 
                 if not tool_calls or tool_call_count >= MAX_TOOL_CALLS:
                     if tool_call_count >= MAX_TOOL_CALLS:
@@ -57,7 +58,7 @@ def main():
                         content, _, usage = stream_response(messages, use_tools=False)
                         messages.remove(stop_msg)
                         if usage:
-                            prompt_tokens = usage.prompt_tokens
+                            prompt_tokens, _ = usage_tokens(usage)
                     logger.info("response: text")
                     break
 

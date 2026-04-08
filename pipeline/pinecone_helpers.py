@@ -1,20 +1,33 @@
 """Pinecone index management and vector operations for project namespaces."""
 
 import logging
+import os
 from clients import pinecone_client
 from pinecone import ServerlessSpec
 
 logger = logging.getLogger("pipeline.pinecone")
 
 INDEX_NAME = "agenticrag"
-DENSE_DIMENSION = 3072  # text-embedding-3-large
+DENSE_DIMENSION = int(os.getenv("DENSE_EMBEDDING_DIMENSION", 3072))
 DENSE_METRIC = "dotproduct"  # required for hybrid search
 
 
 def ensure_index() -> None:
     """Create the Pinecone index if it doesn't exist."""
-    existing = [idx.name for idx in pinecone_client.list_indexes()]
-    if INDEX_NAME in existing:
+    existing_indexes = list(pinecone_client.list_indexes())
+    existing_names = [idx.name for idx in existing_indexes]
+    if INDEX_NAME in existing_names:
+        try:
+            idx = next(i for i in existing_indexes if i.name == INDEX_NAME)
+            current_dim = int(getattr(idx, "dimension"))
+            if current_dim != DENSE_DIMENSION:
+                logger.warning(
+                    f"index '{INDEX_NAME}' dimension mismatch: existing={current_dim}, "
+                    f"configured={DENSE_DIMENSION}. Recreate the index or set "
+                    "DENSE_EMBEDDING_DIMENSION to match."
+                )
+        except Exception:
+            pass
         logger.info(f"index '{INDEX_NAME}' already exists")
         return
 

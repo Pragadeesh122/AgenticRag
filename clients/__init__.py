@@ -1,14 +1,16 @@
 import os
 from dotenv import load_dotenv
-from openai import OpenAI
 from pinecone import Pinecone
 from minio import Minio
+from llm import build_llm_client
 
 load_dotenv()
 
-openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Provider-agnostic LLM client (LiteLLM-backed).
+llm_client = build_llm_client()
+# Temporary backward-compat alias for older imports.
+openai_client = llm_client
 pinecone_client = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-ollama_client = OpenAI(base_url=os.getenv("OLLAMA_HOST") + "/v1", api_key="ollama")
 
 minio_client = Minio(
     os.getenv("MINIO_ENDPOINT", "localhost:9000"),

@@ -5,9 +5,10 @@ import logging
 from datetime import date, datetime
 from decimal import Decimal
 import psycopg2
-from clients import openai_client
+from clients import llm_client
 from prompts.sql_agent import get_sql_agent_prompt
 from dotenv import load_dotenv
+from llm.response_utils import extract_first_text
 
 load_dotenv()
 
@@ -74,14 +75,13 @@ def _validate_query(sql: str) -> str | None:
 
 def _generate_sql(question: str) -> str:
     """Ask the LLM to generate a SQL query for the question."""
-    response = openai_client.chat.completions.create(
-        model="gpt-5.4-mini",
+    response = llm_client.chat.completions.create(
         messages=[
             {"role": "system", "content": get_sql_agent_prompt(DB_CONFIG)},
             {"role": "user", "content": question},
         ],
     )
-    sql = response.choices[0].message.content.strip()
+    sql = extract_first_text(response, "").strip()
     # Strip markdown code fences if the model wraps it
     if sql.startswith("```"):
         sql = re.sub(r"^```(?:sql)?\n?", "", sql)

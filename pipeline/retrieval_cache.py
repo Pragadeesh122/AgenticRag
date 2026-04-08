@@ -3,30 +3,34 @@
 import hashlib
 import json
 import logging
+import os
 import struct
 
 from memory.redis_client import redis_client
-from clients import openai_client
+from clients import llm_client
+from llm.response_utils import extract_first_embedding
 
 logger = logging.getLogger("pipeline.retrieval_cache")
 
 CACHE_PREFIX = "retrieval_cache"
-INDEX_NAME = f"{CACHE_PREFIX}:idx"
+SMALL_EMBEDDING_MODEL = os.getenv("SMALL_EMBEDDING_MODEL", "text-embedding-3-small")
+EMBEDDING_PROFILE = SMALL_EMBEDDING_MODEL.lower().replace("/", "_").replace(":", "_")
+INDEX_NAME = f"{CACHE_PREFIX}:{EMBEDDING_PROFILE}:idx"
 DEFAULT_TTL = 60 * 60  # 1 hour
 SIMILARITY_THRESHOLD = 0.90
-EMBEDDING_DIM = 1536  # text-embedding-3-small
+DEFAULT_EMBEDDING_DIM = int(os.getenv("SMALL_EMBEDDING_DIMENSION", 1536))
 
 
-def _embed(text: str) -> bytes:
+def _embed(text: str) -> tuple[bytes, int]:
     """Get embedding for cache lookup (small model, fast + cheap)."""
-    response = openai_client.embeddings.create(
-        input=text, model="text-embedding-3-small"
+    response = llm_client.embeddings.create(
+        input=text, model=SMALL_EMBEDDING_MODEL
     )
-    floats = response.data[0].embedding
-    return struct.pack(f"{len(floats)}f", *floats)
+    floats = extract_first_embedding(response)
+    return struct.pack(f"{len(floats)}f", *floats), len(floats)
 
 
-def _ensure_index():
+def _ensure_index(embedding_dim: int):
     """Create the RediSearch vector index if it doesn't exist."""
     try:
         redis_client.ft(INDEX_NAME).info()
@@ -41,7 +45,11 @@ def _ensure_index():
             VectorField(
                 "embedding",
                 "FLAT",
-                {"TYPE": "FLOAT32", "DIM": EMBEDDING_DIM, "DISTANCE_METRIC": "COSINE"},
+                {
+                    "TYPE": "FLOAT32",
+                    "DIM": embedding_dim or DEFAULT_EMBEDDING_DIM,
+                    "DISTANCE_METRIC": "COSINE",
+                },
             ),
         )
         redis_client.ft(INDEX_NAME).create_index(
@@ -55,8 +63,8 @@ def _ensure_index():
 
 def get_cached_retrieval(project_id: str, query: str) -> list[dict] | None:
     """Check if a similar query for this project has cached retrieval results."""
-    _ensure_index()
-    query_embedding = _embed(query)
+    query_embedding, embedding_dim = _embed(query)
+    _ensure_index(embedding_dim)
 
     from redis.commands.search.query import Query
 
@@ -90,8 +98,8 @@ def get_cached_retrieval(project_id: str, query: str) -> list[dict] | None:
 
 def cache_retrieval(project_id: str, query: str, results: list[dict], ttl: int = DEFAULT_TTL):
     """Cache retrieval results for a project query."""
-    _ensure_index()
-    query_embedding = _embed(query)
+    query_embedding, embedding_dim = _embed(query)
+    _ensure_index(embedding_dim)
     cache_key = f"{CACHE_PREFIX}:{project_id}:{hashlib.md5(query.encode()).hexdigest()}"
 
     redis_client.hset(

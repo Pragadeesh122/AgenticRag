@@ -1,12 +1,52 @@
 import sys
 import logging
-from clients import openai_client
+import os
+from clients import llm_client
 from tools import tools
+from llm.factory import get_llm_registry
 
 logger = logging.getLogger("orchestrator")
+ORCHESTRATOR_MODEL = os.getenv("ORCHESTRATOR_MODEL", "claude-haiku-4-5")
 
 
-def stream_response(messages, model="gpt-5.4-mini", use_tools=True):
+def _field(obj, key, default=None):
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def _extract_delta(chunk):
+    choices = _field(chunk, "choices", None)
+    if not choices:
+        return None
+    first_choice = choices[0]
+    return _field(first_choice, "delta", None)
+
+
+def _extract_usage(chunk):
+    return _field(chunk, "usage", None)
+
+
+def _provider_for_model(model):
+    try:
+        return get_llm_registry().resolve_chat(model).provider.name
+    except Exception:
+        return ""
+
+
+def _has_tool_history(messages):
+    """Return True when conversation already contains tool-call blocks."""
+    for msg in messages or []:
+        if not isinstance(msg, dict):
+            continue
+        if msg.get("role") == "tool":
+            return True
+        if msg.get("tool_calls"):
+            return True
+    return False
+
+
+def stream_response(messages, model=None, use_tools=True):
     """Stream an LLM response, printing text tokens as they arrive.
 
     Returns (content, tool_calls, usage) where:
@@ -14,12 +54,22 @@ def stream_response(messages, model="gpt-5.4-mini", use_tools=True):
     - tool_calls: list of tool call objects (or None if text)
     - usage: token usage dict
     """
-    kwargs = {"model": model, "messages": messages, "stream": True,
-              "stream_options": {"include_usage": True}}
+    resolved_model = model or ORCHESTRATOR_MODEL
+    kwargs = {
+        "model": resolved_model,
+        "messages": messages,
+        "stream": True,
+        "stream_options": {"include_usage": True},
+    }
     if use_tools:
         kwargs["tools"] = tools
+    elif _provider_for_model(resolved_model) == "anthropic" and _has_tool_history(
+        messages
+    ):
+        # Anthropic can require an explicit tools field when prior turns include tool messages.
+        kwargs["tools"] = []
 
-    stream = openai_client.chat.completions.create(**kwargs)
+    stream = llm_client.chat.completions.create(**kwargs)
 
     content = ""
     tool_calls_by_index = {}
@@ -27,44 +77,53 @@ def stream_response(messages, model="gpt-5.4-mini", use_tools=True):
 
     for chunk in stream:
         # Capture usage from the final chunk
-        if chunk.usage:
-            usage = chunk.usage
+        chunk_usage = _extract_usage(chunk)
+        if chunk_usage:
+            usage = chunk_usage
 
-        delta = chunk.choices[0].delta if chunk.choices else None
+        delta = _extract_delta(chunk)
         if not delta:
             continue
 
         # Stream text content to stdout immediately
-        if delta.content:
-            sys.stdout.write(delta.content)
+        delta_content = _field(delta, "content", None)
+        if delta_content:
+            sys.stdout.write(delta_content)
             sys.stdout.flush()
-            content += delta.content
+            content += delta_content
 
         # Accumulate tool call deltas
-        if delta.tool_calls:
-            for tc_delta in delta.tool_calls:
-                idx = tc_delta.index
+        delta_tool_calls = _field(delta, "tool_calls", None)
+        if delta_tool_calls:
+            for tc_delta in delta_tool_calls:
+                idx = _field(tc_delta, "index", 0)
                 if idx not in tool_calls_by_index:
                     tool_calls_by_index[idx] = {
-                        "id": tc_delta.id or "",
+                        "id": _field(tc_delta, "id", "") or "",
                         "type": "function",
                         "function": {"name": "", "arguments": ""},
                     }
                 tc = tool_calls_by_index[idx]
-                if tc_delta.id:
-                    tc["id"] = tc_delta.id
-                if tc_delta.function:
-                    if tc_delta.function.name:
-                        tc["function"]["name"] += tc_delta.function.name
-                    if tc_delta.function.arguments:
-                        tc["function"]["arguments"] += tc_delta.function.arguments
+                tc_id = _field(tc_delta, "id", None)
+                if tc_id:
+                    tc["id"] = tc_id
+                tc_function = _field(tc_delta, "function", None)
+                if tc_function:
+                    fn_name = _field(tc_function, "name", "")
+                    fn_arguments = _field(tc_function, "arguments", "")
+                    if fn_name:
+                        tc["function"]["name"] += fn_name
+                    if fn_arguments:
+                        tc["function"]["arguments"] += fn_arguments
 
     if content:
         sys.stdout.write("\n")
         sys.stdout.flush()
 
     if usage:
-        logger.info(f"tokens: {usage.prompt_tokens} in, {usage.completion_tokens} out")
+        prompt_tokens = _field(usage, "prompt_tokens", 0)
+        completion_tokens = _field(usage, "completion_tokens", 0)
+        logger.info(f"tokens: {prompt_tokens} in, {completion_tokens} out")
 
     # Build tool_calls list sorted by index
     if tool_calls_by_index:
@@ -74,7 +133,7 @@ def stream_response(messages, model="gpt-5.4-mini", use_tools=True):
     return content, None, usage
 
 
-def iter_response(messages, model="gpt-5.4-mini", use_tools=True):
+def iter_response(messages, model=None, use_tools=True):
     """Yield text tokens as they arrive, then return tool_calls and usage.
 
     Yields:
@@ -83,49 +142,68 @@ def iter_response(messages, model="gpt-5.4-mini", use_tools=True):
     Returns via generator .value (use wrapper to capture):
         (content, tool_calls, usage)
     """
-    kwargs = {"model": model, "messages": messages, "stream": True,
-              "stream_options": {"include_usage": True}}
+    resolved_model = model or ORCHESTRATOR_MODEL
+    kwargs = {
+        "model": resolved_model,
+        "messages": messages,
+        "stream": True,
+        "stream_options": {"include_usage": True},
+    }
     if use_tools:
         kwargs["tools"] = tools
+    elif _provider_for_model(resolved_model) == "anthropic" and _has_tool_history(
+        messages
+    ):
+        # Anthropic can require an explicit tools field when prior turns include tool messages.
+        kwargs["tools"] = []
 
-    stream = openai_client.chat.completions.create(**kwargs)
+    stream = llm_client.chat.completions.create(**kwargs)
 
     content = ""
     tool_calls_by_index = {}
     usage = None
 
     for chunk in stream:
-        if chunk.usage:
-            usage = chunk.usage
+        chunk_usage = _extract_usage(chunk)
+        if chunk_usage:
+            usage = chunk_usage
 
-        delta = chunk.choices[0].delta if chunk.choices else None
+        delta = _extract_delta(chunk)
         if not delta:
             continue
 
-        if delta.content:
-            yield delta.content
-            content += delta.content
+        delta_content = _field(delta, "content", None)
+        if delta_content:
+            yield delta_content
+            content += delta_content
 
-        if delta.tool_calls:
-            for tc_delta in delta.tool_calls:
-                idx = tc_delta.index
+        delta_tool_calls = _field(delta, "tool_calls", None)
+        if delta_tool_calls:
+            for tc_delta in delta_tool_calls:
+                idx = _field(tc_delta, "index", 0)
                 if idx not in tool_calls_by_index:
                     tool_calls_by_index[idx] = {
-                        "id": tc_delta.id or "",
+                        "id": _field(tc_delta, "id", "") or "",
                         "type": "function",
                         "function": {"name": "", "arguments": ""},
                     }
                 tc = tool_calls_by_index[idx]
-                if tc_delta.id:
-                    tc["id"] = tc_delta.id
-                if tc_delta.function:
-                    if tc_delta.function.name:
-                        tc["function"]["name"] += tc_delta.function.name
-                    if tc_delta.function.arguments:
-                        tc["function"]["arguments"] += tc_delta.function.arguments
+                tc_id = _field(tc_delta, "id", None)
+                if tc_id:
+                    tc["id"] = tc_id
+                tc_function = _field(tc_delta, "function", None)
+                if tc_function:
+                    fn_name = _field(tc_function, "name", "")
+                    fn_arguments = _field(tc_function, "arguments", "")
+                    if fn_name:
+                        tc["function"]["name"] += fn_name
+                    if fn_arguments:
+                        tc["function"]["arguments"] += fn_arguments
 
     if usage:
-        logger.info(f"tokens: {usage.prompt_tokens} in, {usage.completion_tokens} out")
+        prompt_tokens = _field(usage, "prompt_tokens", 0)
+        completion_tokens = _field(usage, "completion_tokens", 0)
+        logger.info(f"tokens: {prompt_tokens} in, {completion_tokens} out")
 
     tool_calls = None
     if tool_calls_by_index:
@@ -136,9 +214,14 @@ def iter_response(messages, model="gpt-5.4-mini", use_tools=True):
 
 class ToolCallProxy:
     """Lightweight wrapper so execute_tool_call can access .id, .function.name, .function.arguments."""
+
     def __init__(self, tc_dict):
         self.id = tc_dict["id"]
-        self.function = type("Fn", (), {
-            "name": tc_dict["function"]["name"],
-            "arguments": tc_dict["function"]["arguments"],
-        })()
+        self.function = type(
+            "Fn",
+            (),
+            {
+                "name": tc_dict["function"]["name"],
+                "arguments": tc_dict["function"]["arguments"],
+            },
+        )()

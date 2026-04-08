@@ -2,14 +2,14 @@
 
 import json
 
-from clients import openai_client
+from clients import llm_client
 from prompts import get_query_generator_prompt, get_judge_prompt
 from test_suite.orchestrator import start_orchestrator, stop_orchestrator, send_prompt
 
 
 def generate_test_queries(n: int = 5) -> list[str]:
     """Ask an LLM to generate diverse test queries for our agent."""
-    response = openai_client.chat.completions.create(
+    response = llm_client.chat.completions.create(
         model="gpt-5.4-mini",
         messages=[
             {
@@ -40,7 +40,7 @@ def generate_test_queries(n: int = 5) -> list[str]:
 def judge_response(prompt: str, tools_used: list[str], actual_response: str) -> dict:
     """Use an LLM to judge whether the agent chose the right tool and responded well."""
     tools_str = ", ".join(tools_used) if tools_used else "(none)"
-    response = openai_client.chat.completions.create(
+    response = llm_client.chat.completions.create(
         model="gpt-5.4-mini",
         messages=[
             {

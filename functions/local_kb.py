@@ -3,14 +3,14 @@ import json
 import logging
 import faiss
 import numpy as np
-from clients import openai_client
+from clients import llm_client
+from llm.response_utils import extract_embedding_vectors, extract_first_embedding
 
 logger = logging.getLogger("local-kb-agent")
 
 INDEX_PATH = "data/faiss.index"
 METADATA_PATH = "data/metadata.json"
-EMBEDDING_MODEL = "text-embedding-3-large"
-DIMENSION = 3072
+EMBEDDING_MODEL = os.getenv("DENSE_EMBEDDING_MODEL", "text-embedding-3-large")
 
 SCHEMA = {
     "type": "function",
@@ -40,15 +40,16 @@ def build_index(documents: list[dict]):
     """
     texts = [doc["text"] for doc in documents]
 
-    response = openai_client.embeddings.create(input=texts, model=EMBEDDING_MODEL)
-    embeddings = np.array([e.embedding for e in response.data], dtype=np.float32)
+    response = llm_client.embeddings.create(input=texts, model=EMBEDDING_MODEL)
+    embeddings = np.array(extract_embedding_vectors(response), dtype=np.float32)
 
-    index = faiss.IndexFlatL2(DIMENSION)
+    dimension = int(embeddings.shape[1])
+    index = faiss.IndexFlatL2(dimension)
     index.add(embeddings)
 
     faiss.write_index(index, INDEX_PATH)
     with open(METADATA_PATH, "w") as f:
-        json.dump(documents, f, indent=2)
+        json.dump({"dimension": dimension, "documents": documents}, f, indent=2)
 
     logger.info(f"built index with {len(documents)} documents")
 
@@ -60,14 +61,28 @@ def query_local_kb(query: str) -> list:
     try:
         index = faiss.read_index(INDEX_PATH)
         with open(METADATA_PATH, "r") as f:
-            documents = json.load(f)
+            metadata = json.load(f)
+            if isinstance(metadata, list):
+                documents = metadata
+            else:
+                documents = metadata.get("documents", [])
     except Exception as e:
         logger.error(f"failed to load index/metadata: {e}")
         return [{"error": f"Failed to load knowledge base: {e}"}]
 
     try:
-        response = openai_client.embeddings.create(input=query, model=EMBEDDING_MODEL)
-        query_vector = np.array([response.data[0].embedding], dtype=np.float32)
+        response = llm_client.embeddings.create(input=query, model=EMBEDDING_MODEL)
+        query_vector = np.array([extract_first_embedding(response)], dtype=np.float32)
+        if index.d != query_vector.shape[1]:
+            return [
+                {
+                    "error": (
+                        f"Embedding dimension mismatch: index={index.d}, "
+                        f"query={query_vector.shape[1]}. "
+                        "Rebuild the local index for the active embedding model."
+                    )
+                }
+            ]
     except Exception as e:
         logger.error(f"embedding failed: {e}")
         return [{"error": f"Embedding failed: {e}"}]

@@ -1,10 +1,13 @@
 import logging
+import os
 from dotenv import load_dotenv
-from clients import openai_client, pinecone_client
+from clients import llm_client, pinecone_client
+from llm.response_utils import extract_first_embedding
 
 load_dotenv()
 
 logger = logging.getLogger("portfolio-agent")
+EMBEDDING_MODEL = os.getenv("DENSE_EMBEDDING_MODEL", "text-embedding-3-large")
 
 SCHEMA = {
     "type": "function",
@@ -29,10 +32,10 @@ CACHEABLE = True
 
 def portfolio(query: str) -> list:
     try:
-        embedding = openai_client.embeddings.create(
-            input=query, model="text-embedding-3-large"
+        embedding = llm_client.embeddings.create(
+            input=query, model=EMBEDDING_MODEL
         )
-        query_vector = embedding.data[0].embedding
+        query_vector = extract_first_embedding(embedding)
     except Exception as e:
         logger.error(f"embedding failed: {e}")
         return [{"error": f"Embedding failed: {e}"}]

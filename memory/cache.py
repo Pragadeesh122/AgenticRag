@@ -6,7 +6,8 @@ from redis.commands.search.query import Query
 from redis.commands.search.index_definition import IndexDefinition, IndexType
 import os
 import redis
-from clients import openai_client
+from clients import llm_client
+from llm.response_utils import extract_first_embedding
 
 cache_redis = redis.Redis(
     host=os.getenv("REDIS_HOST", "localhost"),
@@ -18,22 +19,24 @@ cache_redis = redis.Redis(
 logger = logging.getLogger("cache")
 
 CACHE_PREFIX = "toolcache"
-INDEX_NAME = f"{CACHE_PREFIX}:idx"
+SMALL_EMBEDDING_MODEL = os.getenv("SMALL_EMBEDDING_MODEL", "text-embedding-3-small")
+EMBEDDING_PROFILE = SMALL_EMBEDDING_MODEL.lower().replace("/", "_").replace(":", "_")
+INDEX_NAME = f"{CACHE_PREFIX}:{EMBEDDING_PROFILE}:idx"
 DEFAULT_TTL = 60 * 60 * 24  # 24h
 SIMILARITY_THRESHOLD = 0.87
-EMBEDDING_DIM = 1536  # text-embedding-3-small
+DEFAULT_EMBEDDING_DIM = int(os.getenv("SMALL_EMBEDDING_DIMENSION", 1536))
 
 
-def _embed(text: str) -> bytes:
-    """Get embedding from OpenAI and return as raw bytes for Redis vector storage."""
-    response = openai_client.embeddings.create(
-        input=text, model="text-embedding-3-small"
+def _embed(text: str) -> tuple[bytes, int]:
+    """Get embedding and return raw bytes + vector dimension."""
+    response = llm_client.embeddings.create(
+        input=text, model=SMALL_EMBEDDING_MODEL
     )
-    floats = response.data[0].embedding
-    return struct.pack(f"{len(floats)}f", *floats)
+    floats = extract_first_embedding(response)
+    return struct.pack(f"{len(floats)}f", *floats), len(floats)
 
 
-def _ensure_index():
+def _ensure_index(embedding_dim: int):
     """Create the RediSearch vector index if it doesn't exist."""
     try:
         cache_redis.ft(INDEX_NAME).info()
@@ -45,7 +48,11 @@ def _ensure_index():
             VectorField(
                 "embedding",
                 "FLAT",
-                {"TYPE": "FLOAT32", "DIM": EMBEDDING_DIM, "DISTANCE_METRIC": "COSINE"},
+                {
+                    "TYPE": "FLOAT32",
+                    "DIM": embedding_dim or DEFAULT_EMBEDDING_DIM,
+                    "DISTANCE_METRIC": "COSINE",
+                },
             ),
         )
         cache_redis.ft(INDEX_NAME).create_index(
@@ -59,8 +66,8 @@ def _ensure_index():
 
 def get_cached_result(tool_name: str, query: str) -> str | None:
     """Check if a similar query has been cached using Redis vector search."""
-    _ensure_index()
-    query_embedding = _embed(query)
+    query_embedding, embedding_dim = _embed(query)
+    _ensure_index(embedding_dim)
 
     q = (
         Query(f"(@tool_name:{{{tool_name}}})=>[KNN 1 @embedding $vec AS score]")
@@ -94,9 +101,8 @@ def get_cached_result(tool_name: str, query: str) -> str | None:
 
 def cache_result(tool_name: str, query: str, result: str, ttl: int = DEFAULT_TTL):
     """Cache a tool result with its embedding for Redis vector search."""
-    _ensure_index()
-
-    query_embedding = _embed(query)
+    query_embedding, embedding_dim = _embed(query)
+    _ensure_index(embedding_dim)
     cache_key = f"{CACHE_PREFIX}:{tool_name}:{hashlib.md5(query.encode()).hexdigest()}"
 
     cache_redis.hset(
