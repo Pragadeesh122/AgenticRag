@@ -8,6 +8,7 @@ from functions.tool_router import execute_tool_call
 from utils.streaming import iter_response, ToolCallProxy
 from utils.summarizer import summarize_messages
 from api.session import get_messages, save_messages, get_session_user
+from llm.response_utils import usage_tokens
 from services.chat_postprocess_service import (
     schedule_memory_persistence,
     schedule_session_title,
@@ -29,6 +30,14 @@ def _format_tool_thinking(name: str, args: dict) -> str:
         url = args.get("url", "")
         goal = args.get("goal", "")
         return f"Browsing {url}: {goal}" if url else f"Browsing: {goal}"
+    elif name == "crawl_website":
+        url = args.get("url", "")
+        question = args.get("question", "")
+        return (
+            f"Extracting website content from {url}: {question}"
+            if question
+            else f"Extracting website content from {url}"
+        )
     elif name == "query_local_kb":
         return f'Searching knowledge base for "{args.get("query", "")}"'
     elif name == "portfolio":
@@ -89,7 +98,7 @@ def chat_stream(session_id: str, user_message: str):
                 content, tool_calls, usage = e.value
 
             if usage:
-                prompt_tokens = usage.prompt_tokens
+                prompt_tokens, _ = usage_tokens(usage)
 
             if not tool_calls or tool_call_count >= MAX_TOOL_CALLS:
                 if tool_call_count >= MAX_TOOL_CALLS:
@@ -107,17 +116,51 @@ def chat_stream(session_id: str, user_message: str):
                     # Final response without tools
                     gen = iter_response(messages, use_tools=False)
                     content = ""
+                    final_tool_calls = None
                     try:
                         while True:
                             token = next(gen)
                             content += token
                             yield _sse("token", token)
                     except StopIteration as e:
-                        content, _, usage = e.value
+                        content, final_tool_calls, usage = e.value
+
+                    if (not (content or "").strip()) or final_tool_calls:
+                        logger.warning(
+                            "final no-tool pass returned empty/tool-calls after max tools; "
+                            "retrying with stricter no-tool instruction on same model"
+                        )
+                        fallback_msg = {
+                            "role": "system",
+                            "content": (
+                                "Tool-call budget is exhausted. Do not call tools. "
+                                "Provide your best final answer using only the existing "
+                                "tool outputs and conversation context."
+                            ),
+                        }
+                        messages.append(fallback_msg)
+                        gen = iter_response(messages, use_tools=False)
+                        content = ""
+                        try:
+                            while True:
+                                token = next(gen)
+                                content += token
+                                yield _sse("token", token)
+                        except StopIteration as e:
+                            content, _, usage = e.value
+                        messages.remove(fallback_msg)
+
+                    if not (content or "").strip():
+                        logger.warning("final response still empty; sending graceful fallback text")
+                        content = (
+                            "I gathered the tool results, but couldn't generate a final response. "
+                            "Please retry once and I will answer directly."
+                        )
+                        yield _sse("token", content)
 
                     messages.remove(stop_msg)
                     if usage:
-                        prompt_tokens = usage.prompt_tokens
+                        prompt_tokens, _ = usage_tokens(usage)
 
                 full_content = content
                 break
@@ -182,7 +225,7 @@ def chat_stream(session_id: str, user_message: str):
     user_id = get_session_user(session_id)
     if user_id:
         schedule_memory_persistence(messages, user_id)
-    schedule_session_title(session_id, user_message, full_content)
+    schedule_session_title(session_id, user_message)
 
     yield _sse(
         "done",

@@ -1,13 +1,13 @@
 import json
 import logging
 import uuid
-import asyncio
 from memory.redis_client import redis_client
-from clients import openai_client
+from clients import llm_client
 from prompts.memory import MEMORY, MEMORY_COMPARISON
-from database.core import async_session_maker
+from database.core import sync_session_maker
 from database.models import UserMemory
 from sqlalchemy import select
+from llm.response_utils import extract_first_text
 
 logger = logging.getLogger("memory")
 
@@ -55,8 +55,7 @@ def extract_and_save_memories(messages: list, user_id: str):
     )
 
     # Phase 1: Extract only NEW facts from this conversation
-    response = openai_client.chat.completions.create(
-        model="gpt-4o",
+    response = llm_client.chat.completions.create(
         messages=[
             {
                 "role": "system",
@@ -67,7 +66,7 @@ def extract_and_save_memories(messages: list, user_id: str):
     )
 
     try:
-        new_facts = json.loads(response.choices[0].message.content)
+        new_facts = json.loads(extract_first_text(response, "{}"))
         new_facts = {k: v for k, v in new_facts.items() if k in MEMORY_CATEGORIES and v}
 
         if not new_facts:
@@ -78,8 +77,7 @@ def extract_and_save_memories(messages: list, user_id: str):
         for category, new_value in new_facts.items():
             old_value = existing.get(category)
             if old_value:
-                merge_response = openai_client.chat.completions.create(
-                    model="gpt-4o",
+                merge_response = llm_client.chat.completions.create(
                     messages=[
                         {
                             "role": "system",
@@ -91,7 +89,7 @@ def extract_and_save_memories(messages: list, user_id: str):
                         },
                     ],
                 )
-                merged = merge_response.choices[0].message.content.strip()
+                merged = extract_first_text(merge_response, "").strip()
                 redis_client.hset(key, category, merged)
                 logger.info(f"merged memory for '{category}'")
             else:
@@ -103,13 +101,13 @@ def extract_and_save_memories(messages: list, user_id: str):
         logger.error(f"failed to extract memories: {e}")
 
 
-async def _sync_redis_memory_to_db(user_id: str) -> None:
+def _sync_redis_memory_to_db(user_id: str) -> None:
     key = _memory_key(user_id)
     existing = redis_client.hgetall(key)
 
-    async with async_session_maker() as session:
+    with sync_session_maker() as session:
         stmt = select(UserMemory).where(UserMemory.user_id == uuid.UUID(user_id))
-        memory = (await session.execute(stmt)).scalar_one_or_none()
+        memory = session.execute(stmt).scalar_one_or_none()
         if not memory:
             memory = UserMemory(user_id=uuid.UUID(user_id))
             session.add(memory)
@@ -117,12 +115,12 @@ async def _sync_redis_memory_to_db(user_id: str) -> None:
         for category in MEMORY_CATEGORIES:
             setattr(memory, category, existing.get(category, ""))
 
-        await session.commit()
+        session.commit()
 
 
 def sync_redis_memory_to_db(user_id: str) -> None:
     try:
-        asyncio.run(_sync_redis_memory_to_db(user_id))
+        _sync_redis_memory_to_db(user_id)
         logger.info("synced memory from Redis to Postgres")
     except Exception as e:
         logger.error(f"failed to sync memory to Postgres: {e}")

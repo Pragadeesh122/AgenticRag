@@ -13,6 +13,7 @@ from services.chat_postprocess_service import (
     schedule_memory_persistence,
     schedule_session_title,
 )
+from llm.response_utils import usage_tokens
 
 logger = logging.getLogger("api.project_chat")
 
@@ -82,7 +83,7 @@ def project_chat_stream(
         except StopIteration as e:
             full_content, _, usage = e.value
             if usage:
-                prompt_tokens = usage.prompt_tokens
+                prompt_tokens, _ = usage_tokens(usage)
 
     except Exception as e:
         logger.error(f"project chat failed: {e}")
@@ -105,7 +106,7 @@ def project_chat_stream(
     user_id = get_session_user(session_id)
     if user_id:
         schedule_memory_persistence(messages, user_id)
-    schedule_session_title(session_id, user_message, full_content)
+    schedule_session_title(session_id, user_message)
 
     yield _sse(
         "done",
