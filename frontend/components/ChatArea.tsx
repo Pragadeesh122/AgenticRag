@@ -132,6 +132,8 @@ export default function ChatArea({
   const bottomRef = useRef<HTMLDivElement>(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const userScrolledUp = useRef(false);
+  const wasStreamingRef = useRef(false);
+  const isStreamingRef = useRef(isStreaming);
 
   const scrollToBottomPassive = useCallback((behavior: ScrollBehavior = 'smooth') => {
     bottomRef.current?.scrollIntoView({ behavior, block: 'end' });
@@ -143,11 +145,26 @@ export default function ChatArea({
     setShowScrollBtn(false);
   }, [scrollToBottomPassive]);
 
+  const followLatest = useCallback((behavior: ScrollBehavior = 'smooth', hideButton = true) => {
+    userScrolledUp.current = false;
+    if (hideButton) setShowScrollBtn(false);
+    scrollToBottomPassive(behavior);
+  }, [scrollToBottomPassive]);
+  const followLatestPassive = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    userScrolledUp.current = false;
+    scrollToBottomPassive(behavior);
+  }, [scrollToBottomPassive]);
+
   // Detect user scrolling up
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
     const handleScroll = () => {
+      if (isStreamingRef.current) {
+        // Keep follow-mode locked while assistant is generating.
+        userScrolledUp.current = false;
+        return;
+      }
       const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
       if (distanceFromBottom > 120) {
         userScrolledUp.current = true;
@@ -161,20 +178,43 @@ export default function ChatArea({
     return () => el.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Auto-scroll on new messages/tokens unless user scrolled up
+  // Keep streaming responses pinned to the latest token.
   useEffect(() => {
+    isStreamingRef.current = isStreaming;
+  }, [isStreaming]);
+
+  // Auto-scroll on new messages/tokens.
+  useEffect(() => {
+    if (isStreaming) {
+      // Use instant scroll for token streams to avoid lag/jitter.
+      scrollToBottomPassive('auto');
+      userScrolledUp.current = false;
+      return;
+    }
     if (!userScrolledUp.current) {
       scrollToBottomPassive('smooth');
     }
-  }, [messages, scrollToBottomPassive]);
+  }, [messages, isStreaming, scrollToBottomPassive]);
 
   // Scroll immediately when a new user message is sent
   useEffect(() => {
     if (messages.length > 0 && messages[messages.length - 1].role === 'user') {
-      scrollToBottomPassive('smooth');
-      userScrolledUp.current = false;
+      followLatestPassive('smooth');
     }
-  }, [messages.length, messages, scrollToBottomPassive]);
+  }, [messages.length, messages, followLatestPassive]);
+
+  // Force-follow when a new assistant stream starts (new turn submitted).
+  useEffect(() => {
+    if (isStreaming && !wasStreamingRef.current) {
+      followLatestPassive('smooth');
+    }
+    wasStreamingRef.current = isStreaming;
+  }, [isStreaming, followLatestPassive]);
+
+  const handleSubmitAndFollow = useCallback(() => {
+    followLatest('smooth');
+    onSubmit();
+  }, [followLatest, onSubmit]);
 
   const isEmpty = messages.length === 0;
 
@@ -251,7 +291,7 @@ export default function ChatArea({
       </div>
 
       {/* Scroll to bottom floating pill */}
-      {showScrollBtn && (
+      {showScrollBtn && !isStreaming && (
         <div className="absolute bottom-32 left-1/2 -translate-x-1/2 z-10">
           <button
             onClick={() => scrollToBottom('smooth')}
@@ -270,7 +310,7 @@ export default function ChatArea({
           <ChatInput
             value={inputValue}
             onChange={onInputChange}
-            onSubmit={onSubmit}
+            onSubmit={handleSubmitAndFollow}
             onStop={onStop}
             isStreaming={isStreaming}
             disabled={isLoading && !isStreaming}

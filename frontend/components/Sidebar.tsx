@@ -10,6 +10,15 @@ import { AgenticLogo } from './ChatArea';
 import { createProject, deleteProject } from '@/lib/api';
 import type { Session, Project } from '@/lib/types';
 
+function parseSessionTime(value: string): number {
+  if (!value) return 0;
+  // Backend emits naive UTC strings (no timezone suffix). Normalize to UTC.
+  const hasTimezone = /(?:Z|[+-]\d{2}:\d{2})$/.test(value);
+  const normalized = hasTimezone ? value : `${value}Z`;
+  const ts = Date.parse(normalized);
+  return Number.isNaN(ts) ? 0 : ts;
+}
+
 function groupSessionsByTime(sessions: Session[]): {
   today: Session[];
   yesterday: Session[];
@@ -25,11 +34,11 @@ function groupSessionsByTime(sessions: Session[]): {
   const older: Session[] = [];
 
   const sorted = [...sessions].sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    (a, b) => parseSessionTime(b.updatedAt) - parseSessionTime(a.updatedAt)
   );
 
   for (const s of sorted) {
-    const ts = new Date(s.updatedAt).getTime();
+    const ts = parseSessionTime(s.updatedAt);
     if (ts >= startOfToday.getTime()) {
       today.push(s);
     } else if (ts >= startOfYesterday.getTime()) {

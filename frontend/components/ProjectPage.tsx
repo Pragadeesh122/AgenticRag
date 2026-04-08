@@ -15,7 +15,6 @@ import {
   reingestDocument,
   deleteDocument,
   pollDocumentStatus,
-  fetchProjectSessions,
   createProjectSession,
   deleteProjectSession,
   restoreBackendSession,
@@ -63,6 +62,13 @@ interface ProjectPageProps {
 
 function generateLocalId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function deriveSessionTitleFromFirstMessage(message: string): string {
+  const normalized = message.replace(/\s+/g, " ").trim();
+  if (!normalized) return "New chat";
+  const words = normalized.split(" ").slice(0, 12);
+  return words.join(" ").slice(0, 80);
 }
 
 function extractComposerText(message: {content: unknown}): string {
@@ -566,18 +572,17 @@ export default function ProjectPage({
             );
             // Bump session to top
             setSessions((prev) => {
-              const updated = prev.map((s) =>
-                s.id === currentSessionId
-                  ? {...s, updatedAt: new Date().toISOString()}
-                  : s
-              );
-              return updated;
+              const nowIso = new Date().toISOString();
+              const firstTitle = deriveSessionTitleFromFirstMessage(content);
+              return prev.map((s) => {
+                if (s.id !== currentSessionId) return s;
+                return {
+                  ...s,
+                  updatedAt: nowIso,
+                  title: s.title === "New chat" ? firstTitle : s.title,
+                };
+              });
             });
-            if (sessions.find((s) => s.id === currentSessionId)?.title === "New chat") {
-              window.setTimeout(() => {
-                fetchProjectSessions(projectId).then(setSessions).catch(console.error);
-              }, 1500);
-            }
           } else if (event.type === "error") {
             finalToolCalls = finalToolCalls.map((t) =>
               t.status === "running" ? {...t, status: "error" as const} : t
