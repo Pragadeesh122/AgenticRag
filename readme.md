@@ -23,6 +23,7 @@ This starts:
 - `minio` on `http://localhost:9000`
 - MinIO console on `http://localhost:9001`
 - `prometheus` on `http://localhost:9090`
+- `loki` on `http://localhost:3100`
 
 Stop everything with:
 
@@ -51,6 +52,8 @@ Notes:
   - `SMALL_EMBEDDING_DIMENSION` for Redis semantic caches
 - Document ingestion defaults to the ARQ worker through Redis. For a no-worker fallback, set `DOCUMENT_INGEST_MODE=background`.
 - Prometheus scrapes API metrics from `GET /metrics`.
+- Promtail ships Docker container logs to Loki.
+- Recommended app logging format: structured JSON to stdout, shipped by Promtail into Loki.
 - If you run the backend outside Docker after changing Python dependencies, run:
   - `uv sync`
   - `uv run crawl4ai-setup`
