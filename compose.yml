@@ -158,6 +158,21 @@ services:
       api:
         condition: service_started
 
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    depends_on:
+      api:
+        condition: service_started
+
 volumes:
   postgres_data:
     name: database_pgdata
@@ -165,3 +180,4 @@ volumes:
   minio_data:
     name: auth-db_minio_data
   frontend_node_modules:
+  prometheus_data:

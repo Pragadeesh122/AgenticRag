@@ -1,10 +1,12 @@
 """FastAPI server exposing the orchestrator as an API."""
 
 import logging
-from fastapi import FastAPI, HTTPException, Depends
+import time
+from fastapi import FastAPI, HTTPException, Depends, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
 from api.session import create_session, delete_session, restore_session, session_exists
 from api.chat import chat_stream
@@ -26,6 +28,47 @@ from api.auth.schemas import UserRead, UserCreate, UserUpdate
 logging.basicConfig(level=logging.INFO, format="%(name)s | %(message)s")
 
 app = FastAPI(title="AgenticRAG", version="0.1.0")
+
+HTTP_REQUESTS_TOTAL = Counter(
+    "http_requests_total",
+    "Total number of HTTP requests.",
+    ["method", "path", "status_code"],
+)
+HTTP_REQUEST_DURATION_SECONDS = Histogram(
+    "http_request_duration_seconds",
+    "HTTP request latency in seconds.",
+    ["method", "path"],
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10),
+)
+
+
+def _metrics_path(request: Request) -> str:
+    route = request.scope.get("route")
+    path = getattr(route, "path", None)
+    if isinstance(path, str) and path:
+        return path
+    return request.url.path
+
+
+@app.middleware("http")
+async def _prometheus_http_middleware(request: Request, call_next):
+    start = time.perf_counter()
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    finally:
+        path = _metrics_path(request)
+        HTTP_REQUESTS_TOTAL.labels(
+            method=request.method,
+            path=path,
+            status_code=str(status_code),
+        ).inc()
+        HTTP_REQUEST_DURATION_SECONDS.labels(
+            method=request.method,
+            path=path,
+        ).observe(time.perf_counter() - start)
 
 app.add_middleware(
     CORSMiddleware,
@@ -72,6 +115,11 @@ app.include_router(
 app.include_router(projects_router)
 app.include_router(chat_sessions_router)
 app.include_router(chat_messages_router)
+
+
+@app.get("/metrics", include_in_schema=False)
+def metrics():
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 class ChatRequest(BaseModel):

@@ -28,6 +28,7 @@ dependencies = [
     { name = "pinecone" },
     { name = "pinecone-text" },
     { name = "playwright" },
+    { name = "prometheus-client" },
     { name = "psycopg2-binary" },
     { name = "pymupdf" },
     { name = "pymupdf4llm" },
@@ -60,6 +61,7 @@ requires-dist = [
     { name = "pinecone", specifier = ">=8.1.0" },
     { name = "pinecone-text", specifier = ">=0.11.0" },
     { name = "playwright", specifier = ">=1.58.0" },
+    { name = "prometheus-client", specifier = ">=0.23.1" },
     { name = "psycopg2-binary", specifier = ">=2.9.10" },
     { name = "pymupdf", specifier = ">=1.27.2.2" },
     { name = "pymupdf4llm", specifier = ">=1.27.2.2" },
@@ -2199,6 +2201,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/a4/db/6ade5d539c7d151b9defc78fafa8b65aa52352617d0e7699b47008bd801f/playwright_stealth-2.0.3.tar.gz", hash = "sha256:1d8e488fbdd8f190f1269ea8cf5d57d14df3a9f1af1001c41ee3588b2aac3133", size = 25751 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b5/10/607c409712c02a26c4cb794820514cb7fdaaeac15fb05bed917fb8a354b3/playwright_stealth-2.0.3-py3-none-any.whl", hash = "sha256:1887ade423ab7ff8ae16d363a30a38de0b5817e1e4a29d47b74bf3a0e3dbfcb4", size = 34385 },
+]
+
+[[package]]
+name = "prometheus-client"
+version = "0.25.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/1b/fb/d9aa83ffe43ce1f19e557c0971d04b90561b0cfd50762aafb01968285553/prometheus_client-0.25.0.tar.gz", hash = "sha256:5e373b75c31afb3c86f1a52fa1ad470c9aace18082d39ec0d2f918d11cc9ba28", size = 86035 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8d/9b/d4b1e644385499c8346fa9b622a3f030dce14cd6ef8a1871c221a17a67e7/prometheus_client-0.25.0-py3-none-any.whl", hash = "sha256:d5aec89e349a6ec230805d0df882f3807f74fd6c1a2fa86864e3c2279059fed1", size = 64154 },
 ]
 
 [[package]]
