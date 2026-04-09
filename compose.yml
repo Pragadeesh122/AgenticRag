@@ -192,6 +192,23 @@ services:
       loki:
         condition: service_started
 
+  grafana:
+    image: grafana/grafana:11.1.5
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      prometheus:
+        condition: service_started
+      loki:
+        condition: service_started
+
 volumes:
   postgres_data:
     name: database_pgdata
@@ -201,3 +218,4 @@ volumes:
   frontend_node_modules:
   prometheus_data:
   loki_data:
+  grafana_data:

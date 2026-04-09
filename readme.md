@@ -24,6 +24,7 @@ This starts:
 - MinIO console on `http://localhost:9001`
 - `prometheus` on `http://localhost:9090`
 - `loki` on `http://localhost:3100`
+- `grafana` on `http://localhost:3001`
 
 Stop everything with:
 
@@ -53,6 +54,9 @@ Notes:
 - Document ingestion defaults to the ARQ worker through Redis. For a no-worker fallback, set `DOCUMENT_INGEST_MODE=background`.
 - Prometheus scrapes API metrics from `GET /metrics`.
 - Promtail ships Docker container logs to Loki.
+- Grafana datasources are pre-provisioned:
+  - Prometheus (`http://prometheus:9090`)
+  - Loki (`http://loki:3100`)
 - Recommended app logging format: structured JSON to stdout, shipped by Promtail into Loki.
 - If you run the backend outside Docker after changing Python dependencies, run:
   - `uv sync`
