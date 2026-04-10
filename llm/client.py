@@ -13,6 +13,11 @@ from observability.metrics import (
     observe_llm_ttft,
 )
 
+try:
+    from litellm import token_counter
+except Exception:  # pragma: no cover - import failure path
+    token_counter = None
+
 _STREAM_USAGE_PROVIDERS = {"openai", "grok"}
 
 
@@ -36,6 +41,84 @@ def _extract_delta_content(chunk: Any) -> str:
         return ""
     content = _field(delta, "content", "")
     return content or ""
+
+
+def _content_to_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            if isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+                    continue
+                if item.get("type") == "text" and isinstance(item.get("content"), str):
+                    parts.append(item["content"])
+        return "".join(parts)
+    return ""
+
+
+def _extract_response_text(response: Any) -> str:
+    choices = _field(response, "choices", None)
+    if not choices:
+        return ""
+    first_choice = choices[0]
+    message = _field(first_choice, "message", None)
+    if message is None:
+        return ""
+    content = _field(message, "content", "")
+    return _content_to_text(content)
+
+
+def _token_count(
+    *,
+    model: str,
+    text: str | None = None,
+    messages: list[dict] | None = None,
+    tools: Any | None = None,
+    tool_choice: Any | None = None,
+) -> int:
+    if token_counter is None:
+        return 0
+    try:
+        value = token_counter(
+            model=model,
+            text=text,
+            messages=messages,
+            tools=tools,
+            tool_choice=tool_choice,
+        )
+        return int(value or 0)
+    except Exception:
+        return 0
+
+
+def _estimate_usage(
+    *,
+    model: str,
+    messages: list[dict],
+    output_text: str,
+    tools: Any | None = None,
+    tool_choice: Any | None = None,
+) -> dict[str, int] | None:
+    prompt_tokens = _token_count(
+        model=model,
+        messages=messages,
+        tools=tools,
+        tool_choice=tool_choice,
+    )
+    completion_tokens = _token_count(model=model, text=output_text) if output_text else 0
+    if prompt_tokens <= 0 and completion_tokens <= 0:
+        return None
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+    }
 
 
 class _ChatCompletionsFacade:
@@ -84,6 +167,16 @@ class _ChatCompletionsFacade:
         if not stream:
             usage = _extract_usage(response)
             status = "success" if usage is not None else "usage_missing"
+            if usage is None:
+                usage = _estimate_usage(
+                    model=resolved_model,
+                    messages=messages,
+                    output_text=_extract_response_text(response),
+                    tools=call_kwargs.get("tools"),
+                    tool_choice=call_kwargs.get("tool_choice"),
+                )
+                if usage is not None:
+                    status = "usage_estimated"
             cost_usd = (
                 estimate_cost_usd(
                     provider=provider_name,
@@ -112,6 +205,9 @@ class _ChatCompletionsFacade:
             model=resolved_model,
             operation="completion",
             started=started,
+            messages=messages,
+            tools=call_kwargs.get("tools"),
+            tool_choice=call_kwargs.get("tool_choice"),
         )
 
     def _instrument_stream(
@@ -122,16 +218,23 @@ class _ChatCompletionsFacade:
         model: str,
         operation: str,
         started: float,
+        messages: list[dict],
+        tools: Any | None = None,
+        tool_choice: Any | None = None,
     ):
         def _generator():
             usage = None
             first_token_at = None
             ttft_emitted = False
             ended_at = started
+            output_parts: list[str] = []
             try:
                 for chunk in stream_obj:
                     ended_at = time.perf_counter()
-                    if not ttft_emitted and _extract_delta_content(chunk):
+                    delta_content = _extract_delta_content(chunk)
+                    if delta_content:
+                        output_parts.append(delta_content)
+                    if not ttft_emitted and delta_content:
                         ttft = ended_at - started
                         observe_llm_ttft(provider=provider, model=model, seconds=ttft)
                         first_token_at = ended_at
@@ -154,6 +257,16 @@ class _ChatCompletionsFacade:
                 raise
 
             status = "success" if usage is not None else "usage_missing"
+            if usage is None:
+                usage = _estimate_usage(
+                    model=model,
+                    messages=messages,
+                    output_text="".join(output_parts),
+                    tools=tools,
+                    tool_choice=tool_choice,
+                )
+                if usage is not None:
+                    status = "usage_estimated"
             total_duration = max(ended_at - started, 0.0)
             cost_usd = (
                 estimate_cost_usd(

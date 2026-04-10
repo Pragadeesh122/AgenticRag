@@ -67,6 +67,7 @@ class LLMStreamInstrumentationTests(unittest.TestCase):
         )
 
     @patch("llm.client.estimate_cost_usd", return_value=None)
+    @patch("llm.client._estimate_usage", return_value=None)
     @patch("llm.client.observe_llm_output_speed")
     @patch("llm.client.observe_llm_outcome")
     @patch("llm.client.observe_llm_ttft")
@@ -75,6 +76,7 @@ class LLMStreamInstrumentationTests(unittest.TestCase):
         ttft_mock,
         outcome_mock,
         speed_mock,
+        _estimate_usage_mock,
         _cost_mock,
     ):
         chunks = [
@@ -97,3 +99,40 @@ class LLMStreamInstrumentationTests(unittest.TestCase):
         self.assertEqual(outcome_mock.call_args.kwargs["status"], "usage_missing")
         self.assertIsNone(outcome_mock.call_args.kwargs["usage"])
 
+    @patch("llm.client.estimate_cost_usd", return_value=0.001)
+    @patch(
+        "llm.client._estimate_usage",
+        return_value={"prompt_tokens": 13, "completion_tokens": 5},
+    )
+    @patch("llm.client.observe_llm_output_speed")
+    @patch("llm.client.observe_llm_outcome")
+    @patch("llm.client.observe_llm_ttft")
+    def test_stream_usage_is_estimated_when_provider_omits_usage(
+        self,
+        ttft_mock,
+        outcome_mock,
+        speed_mock,
+        _estimate_usage_mock,
+        _cost_mock,
+    ):
+        chunks = [
+            {"choices": [{"delta": {"content": "Hello"}}]},
+            {"choices": [{"delta": {}}]},
+        ]
+        provider = _DummyProvider("anthropic", chunks)
+        facade = _ChatCompletionsFacade(_Registry(provider, "claude-haiku-4-5"))
+
+        stream = facade.create(
+            messages=[{"role": "user", "content": "hi"}],
+            stream=True,
+        )
+        list(stream)
+
+        outcome_mock.assert_called_once()
+        self.assertEqual(outcome_mock.call_args.kwargs["status"], "usage_estimated")
+        self.assertEqual(
+            outcome_mock.call_args.kwargs["usage"],
+            {"prompt_tokens": 13, "completion_tokens": 5},
+        )
+        ttft_mock.assert_called_once()
+        speed_mock.assert_called_once()

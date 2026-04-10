@@ -8,19 +8,24 @@
   "panels": [
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
       "id": 1,
-      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "desc": true, "displayName": "Value" }]
+      },
       "targets": [
         {
-          "expr": "sum by (tool_name) (rate(agenticrag_tool_calls_total{status=\"success\"}[5m]))",
-          "legendFormat": "{{tool_name}}",
+          "expr": "sum by (tool_name, status) (increase(agenticrag_tool_calls_total[$__range]))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{tool_name}} ({{status}})",
           "refId": "A"
         }
       ],
-      "title": "Tool Call Volume (Success)",
-      "type": "timeseries"
+      "title": "Tool Calls by Tool (Count)",
+      "type": "table"
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -103,4 +108,3 @@
   "uid": "agenticrag-ops-v1",
   "version": 1
 }
-
