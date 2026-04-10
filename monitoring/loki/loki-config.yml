@@ -36,6 +36,8 @@ compactor:
 
 limits_config:
   allow_structured_metadata: false
+  # Allow larger Explore log queries so Grafana can fetch full windows.
+  max_entries_limit_per_query: 50000
 
 analytics:
   reporting_enabled: false

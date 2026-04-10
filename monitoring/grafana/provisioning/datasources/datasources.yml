@@ -14,4 +14,8 @@ datasources:
     type: loki
     access: proxy
     url: http://loki:3100
+    jsonData:
+      # Raise default Explore log line limit so short windows don't get truncated
+      # into "newest slice only" behavior.
+      maxLines: 5000
     editable: true
