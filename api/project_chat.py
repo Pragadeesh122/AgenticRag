@@ -18,6 +18,7 @@ from llm.response_utils import usage_tokens
 logger = logging.getLogger("api.project_chat")
 
 MAX_PROMPT_TOKENS = 10000
+MAX_MESSAGES_BEFORE_SUMMARY = 18
 
 
 def project_chat_stream(
@@ -67,14 +68,15 @@ def project_chat_stream(
         context_block += f"\n**Instructions:** {agent.context_instructions}\n"
 
     augmented_message = f"{user_message}\n{context_block}"
-    messages.append({"role": "user", "content": augmented_message})
+    # Keep retrieved context ephemeral for this turn only; persist just the raw user text.
+    inference_messages = [*messages, {"role": "user", "content": augmented_message}]
 
     prompt_tokens = 0
     full_content = ""
 
     # 4. Stream LLM response
     try:
-        gen = iter_response(messages, use_tools=False)
+        gen = iter_response(inference_messages, use_tools=False)
         try:
             while True:
                 token = next(gen)
@@ -88,15 +90,15 @@ def project_chat_stream(
     except Exception as e:
         logger.error(f"project chat failed: {e}")
         yield _sse("error", str(e))
-        if messages and messages[-1].get("role") == "user":
-            messages.pop()
         save_messages(session_id, messages)
         return
 
+    messages.append({"role": "user", "content": user_message})
     messages.append({"role": "assistant", "content": full_content})
 
-    # Summarize if context is getting large
-    if prompt_tokens > MAX_PROMPT_TOKENS:
+    # Summarize when prompt tokens are high, or fallback to message-count threshold
+    # for providers/streams that may not return token usage consistently.
+    if prompt_tokens > MAX_PROMPT_TOKENS or len(messages) > MAX_MESSAGES_BEFORE_SUMMARY:
         updated = summarize_messages(messages)
         messages.clear()
         messages.extend(updated)

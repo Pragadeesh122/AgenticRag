@@ -2,9 +2,11 @@
 
 import logging
 from datetime import timedelta
-from urllib.parse import urlsplit, urlunsplit
+from functools import lru_cache
+from urllib.parse import urlsplit
 import os
 
+from minio import Minio
 from clients import minio_client
 
 logger = logging.getLogger("pipeline.storage")
@@ -19,21 +21,34 @@ def ensure_bucket() -> None:
         logger.info(f"created bucket '{BUCKET_NAME}'")
 
 
-def _rewrite_public_base(url: str) -> str:
-    public_base = os.getenv("MINIO_PUBLIC_BASE_URL")
-    if not public_base:
-        return url
+@lru_cache(maxsize=1)
+def _presign_client() -> Minio:
+    """Client used only for generating browser-facing presigned URLs.
 
-    signed = urlsplit(url)
-    public = urlsplit(public_base)
-    return urlunsplit(
-        (
-            public.scheme or signed.scheme,
-            public.netloc or public.path,
-            signed.path,
-            signed.query,
-            signed.fragment,
+    Signature validation depends on the host used for signing. If we sign with
+    an internal host (e.g. minio:9000) and later rewrite to localhost:9000,
+    direct browser PUT/GET can fail with signature mismatch.
+    """
+    public_base = os.getenv("MINIO_PUBLIC_BASE_URL", "").strip()
+    if not public_base:
+        return minio_client
+
+    normalized = public_base if "://" in public_base else f"http://{public_base}"
+    parsed = urlsplit(normalized)
+    endpoint = parsed.netloc or parsed.path
+    if not endpoint:
+        logger.warning(
+            "invalid MINIO_PUBLIC_BASE_URL='%s'; falling back to internal MinIO endpoint",
+            public_base,
         )
+        return minio_client
+
+    return Minio(
+        endpoint,
+        access_key=os.getenv("MINIO_ACCESS_KEY", "minioadmin"),
+        secret_key=os.getenv("MINIO_SECRET_KEY", "minioadmin"),
+        secure=(parsed.scheme.lower() == "https"),
+        region=os.getenv("MINIO_REGION", "us-east-1"),
     )
 
 
@@ -48,23 +63,23 @@ def get_presigned_put_url(object_key: str, expires: int = 3600) -> str:
         Presigned URL string
     """
     ensure_bucket()
-    url = minio_client.presigned_put_object(
+    url = _presign_client().presigned_put_object(
         BUCKET_NAME,
         object_key,
         expires=timedelta(seconds=expires),
     )
-    return _rewrite_public_base(url)
+    return url
 
 
 def get_presigned_get_url(object_key: str, expires: int = 3600) -> str:
     """Generate a presigned GET URL for browser document viewing/downloading."""
     ensure_bucket()
-    url = minio_client.presigned_get_object(
+    url = _presign_client().presigned_get_object(
         BUCKET_NAME,
         object_key,
         expires=timedelta(seconds=expires),
     )
-    return _rewrite_public_base(url)
+    return url
 
 
 def download_to_bytes(object_key: str) -> bytes:

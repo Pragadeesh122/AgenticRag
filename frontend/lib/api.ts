@@ -364,7 +364,7 @@ export async function uploadDocument(
   });
   if (!initRes.ok) {
     const err = await initRes.json().catch(() => ({ error: 'Upload failed' }));
-    throw new Error(err.error || 'Upload failed');
+    throw new Error(err.detail || err.error || 'Upload failed');
   }
 
   const { uploadUrl, ...document } = await initRes.json();
@@ -376,7 +376,8 @@ export async function uploadDocument(
     body: file,
   });
   if (!uploadRes.ok) {
-    throw new Error('Direct upload to storage failed');
+    const detail = await uploadRes.text().catch(() => '');
+    throw new Error(`Direct upload to storage failed (${uploadRes.status}): ${detail.slice(0, 300)}`);
   }
 
   // 3. Confirm upload and trigger ingestion.
@@ -419,7 +420,7 @@ export async function reingestDocument(
   });
   if (!initRes.ok) {
     const err = await initRes.json().catch(() => ({ error: 'Re-ingest failed' }));
-    throw new Error(err.error || 'Re-ingest failed');
+    throw new Error(err.detail || err.error || 'Re-ingest failed');
   }
 
   const { uploadUrl, ...document } = await initRes.json();
@@ -430,7 +431,8 @@ export async function reingestDocument(
     body: file,
   });
   if (!uploadRes.ok) {
-    throw new Error('Direct upload to storage failed');
+    const detail = await uploadRes.text().catch(() => '');
+    throw new Error(`Direct upload to storage failed (${uploadRes.status}): ${detail.slice(0, 300)}`);
   }
 
   const confirmRes = await apiFetch(`/api/projects/${projectId}/upload`, {
