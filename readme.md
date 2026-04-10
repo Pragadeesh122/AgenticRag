@@ -57,6 +57,14 @@ Notes:
 - Grafana datasources are pre-provisioned:
   - Prometheus (`http://prometheus:9090`)
   - Loki (`http://loki:3100`)
+- Grafana dashboards are provisioned from `monitoring/grafana/provisioning/dashboards`:
+  - `AgenticRAG - Economics`
+  - `AgenticRAG - Agentic Ops`
+  - `AgenticRAG - UX & Latency`
+- Grafana alert rules are provisioned from `monitoring/grafana/provisioning/alerting` (rules only; set contact points manually).
+- Observability env flags:
+  - `OBSERVABILITY_HASH_SALT` for stable hashed identity labels
+  - `OBS_ENABLE_HIGH_CARDINALITY_METRICS=true|false` to toggle session-level token/spend series
 - Recommended app logging format: structured JSON to stdout, shipped by Promtail into Loki.
 - If you run the backend outside Docker after changing Python dependencies, run:
   - `uv sync`
