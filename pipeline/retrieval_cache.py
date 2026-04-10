@@ -21,6 +21,20 @@ SIMILARITY_THRESHOLD = 0.90
 DEFAULT_EMBEDDING_DIM = int(os.getenv("SMALL_EMBEDDING_DIMENSION", 1536))
 
 
+def _escape_tag_value(value: str) -> str:
+    """Escape special chars for RediSearch TAG queries.
+
+    UUIDs contain '-' which must be escaped inside TAG filter braces.
+    """
+    escaped: list[str] = []
+    for ch in value:
+        if ch.isalnum() or ch == "_":
+            escaped.append(ch)
+        else:
+            escaped.append(f"\\{ch}")
+    return "".join(escaped)
+
+
 def _embed(text: str) -> tuple[bytes, int]:
     """Get embedding for cache lookup (small model, fast + cheap)."""
     response = llm_client.embeddings.create(
@@ -68,8 +82,11 @@ def get_cached_retrieval(project_id: str, query: str) -> list[dict] | None:
 
     from redis.commands.search.query import Query
 
+    project_id_filter = _escape_tag_value(project_id)
     q = (
-        Query(f"(@project_id:{{{project_id}}})=>[KNN 1 @embedding $vec AS score]")
+        Query(
+            f"(@project_id:{{{project_id_filter}}})=>[KNN 1 @embedding $vec AS score]"
+        )
         .sort_by("score")
         .return_fields("results", "score")
         .dialect(2)

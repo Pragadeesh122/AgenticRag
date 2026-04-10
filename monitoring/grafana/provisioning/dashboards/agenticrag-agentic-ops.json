@@ -11,21 +11,16 @@
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
       "id": 1,
-      "options": {
-        "showHeader": true,
-        "sortBy": [{ "desc": true, "displayName": "Value" }]
-      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
       "targets": [
         {
-          "expr": "sum by (tool_name, status) (increase(agenticrag_tool_calls_total[$__range]))",
-          "format": "table",
-          "instant": true,
-          "legendFormat": "{{tool_name}} ({{status}})",
+          "expr": "sum by (tool_name) (increase(agenticrag_tool_calls_total[$__interval]))",
+          "legendFormat": "{{tool_name}}",
           "refId": "A"
         }
       ],
       "title": "Tool Calls by Tool (Count)",
-      "type": "table"
+      "type": "timeseries"
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },

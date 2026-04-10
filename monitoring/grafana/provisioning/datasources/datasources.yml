@@ -17,5 +17,5 @@ datasources:
     jsonData:
       # Raise default Explore log line limit so short windows don't get truncated
       # into "newest slice only" behavior.
-      maxLines: 5000
+      maxLines: 2000
     editable: true

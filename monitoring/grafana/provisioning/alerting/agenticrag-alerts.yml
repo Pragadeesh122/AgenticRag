@@ -4,7 +4,7 @@ groups:
   - orgId: 1
     name: agenticrag-observability
     folder: AgenticRAG Alerts
-    interval: 1m
+    interval: 5m
     rules:
       - uid: ag_max_tool_calls_loop
         title: Max Tool Calls Loop Detected
@@ -50,7 +50,7 @@ groups:
                     type: and
         noDataState: NoData
         execErrState: Error
-        for: 2m
+        for: 5m
         annotations:
           summary: "Frequent max-tool-call events indicate a reasoning loop."
         labels:
@@ -100,7 +100,7 @@ groups:
                     type: and
         noDataState: NoData
         execErrState: Error
-        for: 2m
+        for: 5m
         annotations:
           summary: "LLM/provider failures are spiking in API logs."
         labels:
@@ -255,4 +255,3 @@ groups:
           summary: "API p95 latency is above 2 seconds."
         labels:
           severity: warning
-

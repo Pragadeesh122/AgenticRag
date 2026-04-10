@@ -13,7 +13,6 @@ from observability.context import pop_context, push_context
 from observability.metrics import observe_retrieval_results, observe_summarization
 from services.chat_postprocess_service import (
     schedule_memory_persistence,
-    schedule_session_title,
 )
 from llm.response_utils import usage_tokens
 
@@ -124,7 +123,6 @@ def project_chat_stream(
 
         if user_id:
             schedule_memory_persistence(messages, user_id)
-        schedule_session_title(session_id, user_message)
 
         yield _sse(
             "done",

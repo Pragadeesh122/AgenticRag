@@ -10,10 +10,13 @@ from utils.summarizer import summarize_messages
 from api.session import get_messages, save_messages, get_session_user
 from llm.response_utils import usage_tokens
 from observability.context import pop_context, push_context
-from observability.metrics import observe_max_tool_calls_reached, observe_summarization
+from observability.metrics import (
+    observe_agent_route,
+    observe_max_tool_calls_reached,
+    observe_summarization,
+)
 from services.chat_postprocess_service import (
     schedule_memory_persistence,
-    schedule_session_title,
 )
 
 logger = logging.getLogger("api.chat")
@@ -82,6 +85,13 @@ def chat_stream(session_id: str, user_message: str):
         user_id=user_id,
     )
     try:
+        observe_agent_route(
+            selected_agent="orchestrator",
+            route_mode="general",
+            status="success",
+            duration_seconds=0.0,
+        )
+
         messages = get_messages(session_id)
         messages.append({"role": "user", "content": user_message})
 
@@ -235,7 +245,6 @@ def chat_stream(session_id: str, user_message: str):
 
         if user_id:
             schedule_memory_persistence(messages, user_id)
-        schedule_session_title(session_id, user_message)
 
         yield _sse(
             "done",

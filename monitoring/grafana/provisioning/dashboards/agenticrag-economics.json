@@ -46,20 +46,16 @@
       "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
       "id": 3,
-      "options": {
-        "showHeader": true,
-        "sortBy": [{"desc": true, "displayName": "Value"}]
-      },
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
       "targets": [
         {
-          "expr": "topk(10, sum by (session_hash) (increase(agenticrag_llm_session_tokens_total[$__range])))",
-          "format": "table",
-          "instant": true,
+          "expr": "topk(10, sum by (session_hash) (increase(agenticrag_llm_session_tokens_total[$__interval])))",
+          "legendFormat": "{{session_hash}}",
           "refId": "A"
         }
       ],
       "title": "Heavy Hitters (Session Tokens)",
-      "type": "table"
+      "type": "timeseries"
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
