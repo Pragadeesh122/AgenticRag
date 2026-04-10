@@ -1,10 +1,13 @@
 """Agent router — classifies user intent and selects the appropriate agent."""
 
 import logging
+import time
 from clients import llm_client
 from agents.registry import AGENTS
 from agents.base import Agent
 from llm.response_utils import extract_first_text
+from observability.context import set_agent_name
+from observability.metrics import observe_agent_route
 
 logger = logging.getLogger("agents.router")
 
@@ -25,7 +28,7 @@ Respond with ONLY the agent name (one word). Default to "reasoning" if unclear.\
 """
 
 
-def classify_intent(messages: list[dict]) -> str:
+def classify_intent(messages: list[dict]) -> tuple[str, str]:
     """Classify intent from the full conversation."""
     try:
         classification_messages = [{"role": "system", "content": CLASSIFICATION_PROMPT}]
@@ -47,22 +50,37 @@ def classify_intent(messages: list[dict]) -> str:
 
         if agent_name in AGENTS:
             logger.info(f"classified intent → {agent_name}")
-            return agent_name
+            return agent_name, "success"
 
         logger.warning(f"unknown agent '{agent_name}', falling back to reasoning")
-        return "reasoning"
+        return "reasoning", "fallback"
 
     except Exception as e:
         logger.error(f"intent classification failed: {e}")
-        return "reasoning"
+        return "reasoning", "error"
 
 
 def route(user_message: str, agent_name: str | None, messages: list[dict]) -> Agent:
     """Route to an agent — explicit name or auto-classify from conversation."""
+    started = time.perf_counter()
     if agent_name and agent_name != "auto" and agent_name in AGENTS:
+        observe_agent_route(
+            selected_agent=agent_name,
+            route_mode="explicit",
+            status="success",
+            duration_seconds=time.perf_counter() - started,
+        )
+        set_agent_name(agent_name)
         return AGENTS[agent_name]
 
     # Auto: classify from full conversation + new message
     classify_msgs = messages + [{"role": "user", "content": user_message}]
-    classified = classify_intent(classify_msgs)
+    classified, status = classify_intent(classify_msgs)
+    observe_agent_route(
+        selected_agent=classified,
+        route_mode="auto",
+        status=status,
+        duration_seconds=time.perf_counter() - started,
+    )
+    set_agent_name(classified)
     return AGENTS[classified]

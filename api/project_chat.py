@@ -9,6 +9,8 @@ from api.session import get_messages, save_messages, get_session_user
 from pipeline.retriever import retrieve
 from prompts.project_chat import build_context_block
 from agents.router import route as route_agent
+from observability.context import pop_context, push_context
+from observability.metrics import observe_retrieval_results, observe_summarization
 from services.chat_postprocess_service import (
     schedule_memory_persistence,
     schedule_session_title,
@@ -29,96 +31,112 @@ def project_chat_stream(
     agent_name: str | None = None,
 ):
     """Generator that yields SSE events for a project-scoped chat turn."""
-    messages = get_messages(session_id)
-
-    # 1. Route to agent (pass full conversation for context-aware classification)
-    agent = route_agent(user_message, agent_name, messages)
-    yield _sse("thinking", json.dumps({"content": f"Routing to {agent.name} agent"}))
-    yield _sse("agent", json.dumps({"name": agent.name, "description": agent.description}))
-    logger.info(f"using agent: {agent.name}")
-
-    # Always set the agent's system prompt
-    if messages and messages[0].get("role") == "system":
-        messages[0]["content"] = agent.system_prompt
-
-    # 2. Retrieve with agent-specific overrides
-    yield _sse("thinking", json.dumps({"content": "Searching for relevant passages in your documents..."}))
-    try:
-        results = retrieve(
-            project_id=project_id,
-            query=user_message,
-            chunk_count=chunk_count,
-            top_k=agent.top_k_override,
-            alpha=agent.alpha_override,
-        )
-    except Exception as e:
-        logger.error(f"retrieval failed: {e}")
-        results = []
-
-    sources = [
-        {"source": r.get("source", ""), "page": r.get("page"), "score": r.get("score", 0)}
-        for r in results
-    ]
-    yield _sse("thinking", json.dumps({"content": f"Found {len(results)} relevant passages"}))
-    yield _sse("retrieval", json.dumps({"sources": sources, "count": len(results)}))
-
-    # 3. Build the context-augmented message
-    context_block = build_context_block(results)
-    if agent.context_instructions:
-        context_block += f"\n**Instructions:** {agent.context_instructions}\n"
-
-    augmented_message = f"{user_message}\n{context_block}"
-    # Keep retrieved context ephemeral for this turn only; persist just the raw user text.
-    inference_messages = [*messages, {"role": "user", "content": augmented_message}]
-
-    prompt_tokens = 0
-    full_content = ""
-
-    # 4. Stream LLM response
-    try:
-        gen = iter_response(inference_messages, use_tools=False)
-        try:
-            while True:
-                token = next(gen)
-                full_content += token
-                yield _sse("token", token)
-        except StopIteration as e:
-            full_content, _, usage = e.value
-            if usage:
-                prompt_tokens, _ = usage_tokens(usage)
-
-    except Exception as e:
-        logger.error(f"project chat failed: {e}")
-        yield _sse("error", str(e))
-        save_messages(session_id, messages)
-        return
-
-    messages.append({"role": "user", "content": user_message})
-    messages.append({"role": "assistant", "content": full_content})
-
-    # Summarize when prompt tokens are high, or fallback to message-count threshold
-    # for providers/streams that may not return token usage consistently.
-    if prompt_tokens > MAX_PROMPT_TOKENS or len(messages) > MAX_MESSAGES_BEFORE_SUMMARY:
-        updated = summarize_messages(messages)
-        messages.clear()
-        messages.extend(updated)
-
-    save_messages(session_id, messages)
-
     user_id = get_session_user(session_id)
-    if user_id:
-        schedule_memory_persistence(messages, user_id)
-    schedule_session_title(session_id, user_message)
-
-    yield _sse(
-        "done",
-        json.dumps({
-            "agent": agent.name,
-            "sources_used": len(results),
-            "prompt_tokens": prompt_tokens,
-            "structured": agent.structured_output,
-        }),
+    context_tokens = push_context(
+        chat_type="project",
+        user_id=user_id,
+        session_id=session_id,
+        project_id=project_id,
     )
+    try:
+        messages = get_messages(session_id)
+
+        # 1. Route to agent (pass full conversation for context-aware classification)
+        agent = route_agent(user_message, agent_name, messages)
+        yield _sse("thinking", json.dumps({"content": f"Routing to {agent.name} agent"}))
+        yield _sse("agent", json.dumps({"name": agent.name, "description": agent.description}))
+        logger.info(f"using agent: {agent.name}")
+
+        # Always set the agent's system prompt
+        if messages and messages[0].get("role") == "system":
+            messages[0]["content"] = agent.system_prompt
+
+        # 2. Retrieve with agent-specific overrides
+        yield _sse("thinking", json.dumps({"content": "Searching for relevant passages in your documents..."}))
+        try:
+            results = retrieve(
+                project_id=project_id,
+                query=user_message,
+                chunk_count=chunk_count,
+                top_k=agent.top_k_override,
+                alpha=agent.alpha_override,
+            )
+        except Exception as e:
+            logger.error(f"retrieval failed: {e}")
+            results = []
+        observe_retrieval_results(agent_name=agent.name, result_count=len(results))
+
+        sources = [
+            {"source": r.get("source", ""), "page": r.get("page"), "score": r.get("score", 0)}
+            for r in results
+        ]
+        yield _sse("thinking", json.dumps({"content": f"Found {len(results)} relevant passages"}))
+        yield _sse("retrieval", json.dumps({"sources": sources, "count": len(results)}))
+
+        # 3. Build the context-augmented message
+        context_block = build_context_block(results)
+        if agent.context_instructions:
+            context_block += f"\n**Instructions:** {agent.context_instructions}\n"
+
+        augmented_message = f"{user_message}\n{context_block}"
+        # Keep retrieved context ephemeral for this turn only; persist just the raw user text.
+        inference_messages = [*messages, {"role": "user", "content": augmented_message}]
+
+        prompt_tokens = 0
+        full_content = ""
+
+        # 4. Stream LLM response
+        try:
+            gen = iter_response(inference_messages, use_tools=False)
+            try:
+                while True:
+                    token = next(gen)
+                    full_content += token
+                    yield _sse("token", token)
+            except StopIteration as e:
+                full_content, _, usage = e.value
+                if usage:
+                    prompt_tokens, _ = usage_tokens(usage)
+
+        except Exception as e:
+            logger.error(f"project chat failed: {e}")
+            yield _sse("error", str(e))
+            save_messages(session_id, messages)
+            return
+
+        messages.append({"role": "user", "content": user_message})
+        messages.append({"role": "assistant", "content": full_content})
+
+        # Summarize when prompt tokens are high, or fallback to message-count threshold
+        # for providers/streams that may not return token usage consistently.
+        if prompt_tokens > MAX_PROMPT_TOKENS:
+            observe_summarization(reason="prompt_tokens")
+            updated = summarize_messages(messages)
+            messages.clear()
+            messages.extend(updated)
+        elif len(messages) > MAX_MESSAGES_BEFORE_SUMMARY:
+            observe_summarization(reason="message_count")
+            updated = summarize_messages(messages)
+            messages.clear()
+            messages.extend(updated)
+
+        save_messages(session_id, messages)
+
+        if user_id:
+            schedule_memory_persistence(messages, user_id)
+        schedule_session_title(session_id, user_message)
+
+        yield _sse(
+            "done",
+            json.dumps({
+                "agent": agent.name,
+                "sources_used": len(results),
+                "prompt_tokens": prompt_tokens,
+                "structured": agent.structured_output,
+            }),
+        )
+    finally:
+        pop_context(context_tokens)
 
 
 def _sse(event: str, data: str) -> str:

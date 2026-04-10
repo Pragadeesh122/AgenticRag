@@ -22,6 +22,7 @@ OPENAI_CHAT_MODEL_ALIASES = {
     "gpt-4o",
     "gpt-4o-mini",
 }
+STREAM_OPTIONS_ALLOWED_PROVIDERS = {"openai", "grok"}
 
 class LiteLLMProvider(BaseLLMProvider):
     """Provider wrapper that normalizes model names + kwargs for LiteLLM."""
@@ -84,7 +85,7 @@ class LiteLLMProvider(BaseLLMProvider):
         call_kwargs = dict(kwargs)
         if "max_completion_tokens" in call_kwargs and "max_tokens" not in call_kwargs:
             call_kwargs["max_tokens"] = call_kwargs.pop("max_completion_tokens")
-        if self.name != "openai":
+        if self.name not in STREAM_OPTIONS_ALLOWED_PROVIDERS:
             call_kwargs.pop("stream_options", None)
 
         model_name = self._resolve_chat_model(model)

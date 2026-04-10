@@ -7,6 +7,7 @@ from llm.factory import get_llm_registry
 
 logger = logging.getLogger("orchestrator")
 ORCHESTRATOR_MODEL = os.getenv("ORCHESTRATOR_MODEL", "claude-haiku-4-5")
+_STREAM_USAGE_PROVIDERS = {"openai", "grok"}
 
 
 def _field(obj, key, default=None):
@@ -59,8 +60,9 @@ def stream_response(messages, model=None, use_tools=True):
         "model": resolved_model,
         "messages": messages,
         "stream": True,
-        "stream_options": {"include_usage": True},
     }
+    if _provider_for_model(resolved_model) in _STREAM_USAGE_PROVIDERS:
+        kwargs["stream_options"] = {"include_usage": True}
     if use_tools:
         kwargs["tools"] = tools
     elif _provider_for_model(resolved_model) == "anthropic" and _has_tool_history(
@@ -147,8 +149,9 @@ def iter_response(messages, model=None, use_tools=True):
         "model": resolved_model,
         "messages": messages,
         "stream": True,
-        "stream_options": {"include_usage": True},
     }
+    if _provider_for_model(resolved_model) in _STREAM_USAGE_PROVIDERS:
+        kwargs["stream_options"] = {"include_usage": True}
     if use_tools:
         kwargs["tools"] = tools
     elif _provider_for_model(resolved_model) == "anthropic" and _has_tool_history(
