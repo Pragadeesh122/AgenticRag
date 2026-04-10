@@ -35,7 +35,8 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}) {
 
 export async function signOut() {
   await apiFetch('/auth/logout', { method: 'POST' });
-  window.location.reload();
+  // Make post-logout navigation explicit instead of relying on page guards after reload.
+  window.location.href = '/auth/signin';
 }
 
 export async function loginWithCredentials(email: string, password: string): Promise<void> {

@@ -50,7 +50,7 @@ function CallbackHandler() {
     return (
       <div className="flex h-screen w-screen flex-col items-center justify-center bg-[#1a1a1a] text-zinc-100">
         <h2 className="mb-4 text-2xl font-bold">Authentication Error</h2>
-        <p className="mb-6 text-red-400">Missing authorization parameters from Google.</p>
+        <p className="mb-6 text-red-400">Missing authorization parameters.</p>
         <button
           onClick={() => router.push("/auth/signin")}
           className="rounded-lg bg-zinc-800 px-4 py-2 text-sm font-medium hover:bg-zinc-700"
@@ -77,9 +77,13 @@ function CallbackHandler() {
   }
 
   return (
-    <div className="flex flex-col h-screen w-screen items-center justify-center bg-[#1a1a1a] text-zinc-300">
-      <div className="mb-4 h-8 w-8 rounded-full border-2 border-zinc-700 border-t-violet-500 animate-spin" />
-      <p>Verifying Google Login...</p>
+    <div className="relative flex h-screen w-screen flex-col items-center justify-center overflow-hidden bg-[#131417] text-zinc-200">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(124,58,237,0.18),transparent_30%),radial-gradient(circle_at_80%_10%,rgba(34,197,94,0.14),transparent_28%),radial-gradient(circle_at_40%_90%,rgba(59,130,246,0.12),transparent_32%)]" />
+      <div className="pointer-events-none absolute inset-0 opacity-[0.08] [background-image:linear-gradient(to_right,#ffffff_1px,transparent_1px),linear-gradient(to_bottom,#ffffff_1px,transparent_1px)] [background-size:42px_42px]" />
+      <div className="relative z-10 flex flex-col items-center gap-3 rounded-2xl border border-white/10 bg-[#1b1d21]/90 px-8 py-7 backdrop-blur">
+        <div className="h-9 w-9 rounded-full border-2 border-zinc-700 border-t-violet-400 animate-spin" />
+        <p className="text-sm text-zinc-300">Signing you in...</p>
+      </div>
     </div>
   );
 }
@@ -87,8 +91,13 @@ function CallbackHandler() {
 export default function CallbackPage() {
   return (
     <Suspense fallback={
-       <div className="flex flex-col h-screen items-center justify-center bg-[#1a1a1a] text-zinc-300">
-          Loading...
+       <div className="relative flex h-screen w-screen flex-col items-center justify-center overflow-hidden bg-[#131417] text-zinc-200">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(124,58,237,0.18),transparent_30%),radial-gradient(circle_at_80%_10%,rgba(34,197,94,0.14),transparent_28%),radial-gradient(circle_at_40%_90%,rgba(59,130,246,0.12),transparent_32%)]" />
+          <div className="pointer-events-none absolute inset-0 opacity-[0.08] [background-image:linear-gradient(to_right,#ffffff_1px,transparent_1px),linear-gradient(to_bottom,#ffffff_1px,transparent_1px)] [background-size:42px_42px]" />
+          <div className="relative z-10 flex flex-col items-center gap-3 rounded-2xl border border-white/10 bg-[#1b1d21]/90 px-8 py-7 backdrop-blur">
+            <div className="h-9 w-9 rounded-full border-2 border-zinc-700 border-t-violet-400 animate-spin" />
+            <p className="text-sm text-zinc-300">Signing you in...</p>
+          </div>
        </div>
     }>
       <CallbackHandler />
