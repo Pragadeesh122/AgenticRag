@@ -1,7 +1,9 @@
 import asyncio
+import contextvars
 import unittest
 
 from observability.context import (
+    clear_context,
     get_chat_type,
     get_project_hash,
     get_session_hash,
@@ -13,6 +15,12 @@ from observability.hash import stable_hash
 
 
 class ObservabilityContextTests(unittest.TestCase):
+    def setUp(self):
+        clear_context()
+
+    def tearDown(self):
+        clear_context()
+
     def test_push_and_pop_context(self):
         tokens = push_context(
             chat_type="project",
@@ -54,3 +62,15 @@ class ObservabilityContextTests(unittest.TestCase):
         self.assertEqual(get_user_hash(), "unknown")
         self.assertEqual(get_session_hash(), "unknown")
 
+    def test_pop_context_works_from_different_context_copy(self):
+        previous = push_context(
+            chat_type="general",
+            user_id="user-x",
+            session_id="session-x",
+        )
+        copied = contextvars.copy_context()
+        copied.run(pop_context, previous)
+        # Original context remains unchanged.
+        self.assertEqual(get_chat_type(), "general")
+        # Copied context was restored to defaults.
+        self.assertEqual(copied.run(get_chat_type), "unknown")
