@@ -11,7 +11,13 @@ SCHEMA = {
     "type": "function",
     "function": {
         "name": "search",
-        "description": "Search the web for any information. Use this for questions about current events, dates, weather, news, facts, or anything you don't know.",
+        "description": (
+            "Search the public web for current or external information. "
+            "Use this for up-to-date facts, news, dates, prices, or multiple independent lookups. "
+            "Do not use it when you already have one exact page URL to inspect; use crawl_website instead. "
+            "This tool is safe for parallel fan-out across distinct queries. "
+            "It returns a concise text summary of the top search findings."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -26,6 +32,13 @@ SCHEMA = {
 }
 
 CACHEABLE = True
+POLICY = {
+    "execution_mode": "parallel_safe",
+    "max_parallel_instances": 3,
+    "requires_fresh_input": False,
+    "dedupe_key_fields": ("query",),
+    "verification_only_after_result": False,
+}
 
 
 def search(query: str) -> str:

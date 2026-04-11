@@ -13,10 +13,11 @@ SCHEMA = {
     "function": {
         "name": "crawl_website",
         "description": (
-            "Extract clean content from a known webpage URL using Crawl4AI. "
+            "Extract clean content from one known webpage URL using Crawl4AI. "
             "Use this when you already have the exact page URL and need the page's main content "
-            "or a focused answer from that specific page. Prefer this over web search for "
-            "single-page extraction."
+            "or a focused answer from that specific page. Prefer this over search for single-page extraction. "
+            "Do not fan this tool out in parallel when a follow-up decision may depend on what the page says. "
+            "It returns JSON with the final URL, title, extracted markdown, top links, and optional focused extraction."
         ),
         "parameters": {
             "type": "object",
@@ -39,6 +40,13 @@ SCHEMA = {
 }
 
 CACHEABLE = False
+POLICY = {
+    "execution_mode": "sequential_first",
+    "max_parallel_instances": 1,
+    "requires_fresh_input": True,
+    "dedupe_key_fields": ("url", "question"),
+    "verification_only_after_result": True,
+}
 MAX_MARKDOWN_CHARS = 12000
 
 QUESTION_ANSWER_PROMPT = """You extract answers from a crawled webpage.

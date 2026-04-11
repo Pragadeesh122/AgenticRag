@@ -24,7 +24,9 @@ SCHEMA = {
             "Control a real browser to visit websites, fill out forms, click buttons, "
             "and extract information from any page. Use this when you need to interact "
             "with a website directly — login forms, multi-step forms, dynamic pages, "
-            "or anything that requires actual browser interaction."
+            "or anything that requires actual browser interaction. Do not use it for a simple "
+            "page read when crawl_website is enough. Run it step-by-step rather than in parallel "
+            "with other dependent tools. It returns a plain-text action history and outcome summary."
         ),
         "parameters": {
             "type": "object",
@@ -47,6 +49,13 @@ SCHEMA = {
 }
 
 CACHEABLE = False
+POLICY = {
+    "execution_mode": "sequential_first",
+    "max_parallel_instances": 1,
+    "requires_fresh_input": True,
+    "dedupe_key_fields": ("url", "goal"),
+    "verification_only_after_result": True,
+}
 
 
 def _decide_next(goal: str, ax_tree: str, history: list[str]) -> dict:
