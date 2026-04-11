@@ -1,4 +1,5 @@
 import uuid
+import logging
 from typing import Optional
 from fastapi import Depends, Request
 from fastapi_users import BaseUserManager, FastAPIUsers, exceptions, UUIDIDMixin
@@ -10,12 +11,24 @@ from database.core import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from api.auth.config import SECRET, auth_backend
 
+logger = logging.getLogger("api.auth.manager")
+
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     reset_password_token_secret = SECRET
     verification_token_secret = SECRET
 
     async def on_after_register(self, user: User, request: Optional[Request] = None):
         print(f"User {user.id} has registered.")
+
+    async def on_after_forgot_password(
+        self, user: User, token: str, request: Optional[Request] = None
+    ):
+        logger.info(f"password reset token generated for {user.email}: {token}")
+
+    async def on_after_request_verify(
+        self, user: User, token: str, request: Optional[Request] = None
+    ):
+        logger.info(f"email verification token generated for {user.email}: {token}")
 
     async def authenticate(
         self, credentials: OAuth2PasswordRequestForm

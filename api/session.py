@@ -76,6 +76,13 @@ def session_exists(session_id: str) -> bool:
     return redis_client.exists(_session_key(session_id)) > 0
 
 
+def session_owned_by_user(session_id: str, user_id: str) -> bool:
+    """Return True only when the Redis session exists and is bound to the user."""
+    if not session_exists(session_id):
+        return False
+    return redis_client.get(f"{_session_key(session_id)}:user") == user_id
+
+
 def get_messages(session_id: str) -> list[dict]:
     data = redis_client.get(_session_key(session_id))
     if data is None:

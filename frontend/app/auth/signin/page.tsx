@@ -7,6 +7,7 @@ import { Lightning } from "@phosphor-icons/react/dist/ssr/Lightning";
 import { apiFetch, loginWithCredentials, registerWithCredentials } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 function GoogleBrandIcon({ size = 18 }: { size?: number }) {
   return (
@@ -215,6 +216,14 @@ export default function SignIn() {
                 className="w-full rounded-xl border border-white/10 bg-black/25 px-3 py-2.5 text-sm text-zinc-100 outline-none transition-colors placeholder:text-zinc-500 focus:border-violet-400/60"
                 placeholder="At least 8 characters"
               />
+              <div className="mt-2 text-right">
+                <Link
+                  href="/auth/forgot-password"
+                  className="text-xs text-violet-300/80 hover:text-violet-200"
+                >
+                  Forgot password?
+                </Link>
+              </div>
             </div>
 
             {error ? (
