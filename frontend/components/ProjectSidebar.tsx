@@ -19,8 +19,11 @@ import { ChartBar } from '@phosphor-icons/react/dist/ssr/ChartBar';
 import { ListBullets } from '@phosphor-icons/react/dist/ssr/ListBullets';
 import { Lightning } from '@phosphor-icons/react/dist/ssr/Lightning';
 import { ChatTeardropDots } from '@phosphor-icons/react/dist/ssr/ChatTeardropDots';
+import { MagnifyingGlass } from '@phosphor-icons/react/dist/ssr/MagnifyingGlass';
+import { X } from '@phosphor-icons/react/dist/ssr/X';
+import { ArrowSquareOut } from '@phosphor-icons/react/dist/ssr/ArrowSquareOut';
 import { AgenticLogo } from './ChatArea';
-import type { Project, AgentInfo, Session } from '@/lib/types';
+import type { Project, AgentInfo, Session, ProjectSearchResult } from '@/lib/types';
 
 const AGENT_ICONS: Record<string, React.ReactNode> = {
   reasoning: <Brain size={16} className="text-violet-400" />,
@@ -76,6 +79,13 @@ interface ProjectSidebarProps {
   onDeleteDocument: (docId: string) => void;
   isUploading: boolean;
   reingestingDocumentId: string | null;
+  searchQuery: string;
+  onSearchQueryChange: (value: string) => void;
+  onSearch: () => void;
+  onClearSearch: () => void;
+  searchResults: ProjectSearchResult[];
+  isSearching: boolean;
+  onOpenSearchResult: (result: ProjectSearchResult) => void;
   sessions: Session[];
   activeSessionId: string | null;
   onSelectSession: (id: string) => void;
@@ -93,6 +103,13 @@ export default function ProjectSidebar({
   onDeleteDocument,
   isUploading,
   reingestingDocumentId,
+  searchQuery,
+  onSearchQueryChange,
+  onSearch,
+  onClearSearch,
+  searchResults,
+  isSearching,
+  onOpenSearchResult,
   sessions,
   activeSessionId,
   onSelectSession,
@@ -233,6 +250,82 @@ export default function ProjectSidebar({
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="border-t border-white/6 mb-3" />
+
+        {/* Search */}
+        <div className="mb-3">
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="px-1 text-[11px] font-medium uppercase tracking-widest text-zinc-500 select-none">
+              Search
+            </p>
+            {searchResults.length > 0 && (
+              <button
+                onClick={onClearSearch}
+                className="p-1 rounded text-zinc-600 hover:text-zinc-300 transition-colors duration-100"
+                aria-label="Clear search"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 px-2 py-2 rounded-xl border border-white/10 bg-white/3">
+            <MagnifyingGlass size={15} className="text-zinc-500 shrink-0" />
+            <input
+              value={searchQuery}
+              onChange={(e) => onSearchQueryChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onSearch();
+                if (e.key === 'Escape') onClearSearch();
+              }}
+              placeholder="Search documents…"
+              className="flex-1 bg-transparent text-sm text-zinc-200 placeholder-zinc-600 outline-none"
+            />
+            <button
+              onClick={onSearch}
+              disabled={isSearching || !searchQuery.trim()}
+              className="px-2 py-1 text-[11px] rounded-md bg-violet-500/15 text-violet-300 border border-violet-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSearching ? '...' : 'Go'}
+            </button>
+          </div>
+
+          {searchResults.length > 0 && (
+            <ul className="mt-2 flex flex-col gap-1">
+              {searchResults.map((result) => (
+                <li
+                  key={result.id}
+                  className="px-2.5 py-2 rounded-lg border border-white/8 bg-white/3"
+                >
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-zinc-300 truncate">
+                        {result.source}
+                      </p>
+                      <p className="mt-1 text-[11px] text-zinc-500 line-clamp-3">
+                        {result.snippet}
+                      </p>
+                      <p className="mt-1 text-[10px] text-zinc-600">
+                        {result.page !== null ? `Page ${result.page} · ` : ''}
+                        Score {result.score.toFixed(2)}
+                      </p>
+                    </div>
+                    {result.documentId && (
+                      <button
+                        onClick={() => onOpenSearchResult(result)}
+                        className="p-1 rounded text-zinc-500 hover:text-zinc-200 transition-colors duration-100"
+                        aria-label={`Open ${result.source}`}
+                      >
+                        <ArrowSquareOut size={13} />
+                      </button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         <div className="border-t border-white/6 mb-3" />

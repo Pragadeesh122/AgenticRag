@@ -1,6 +1,8 @@
+import json
+import re
 from typing import List, Optional
 from pydantic import BaseModel
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -58,6 +60,87 @@ class SessionResponse(BaseModel):
             createdAt=obj.created_at.isoformat(),
             updatedAt=obj.updated_at.isoformat(),
         )
+
+
+def _export_filename(title: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", (title or "chat-session")).strip("-").lower()
+    return f"{slug or 'chat-session'}.md"
+
+
+def _render_tool_calls(tool_calls: list | None, metadata: dict) -> str:
+    parts = metadata.get("parts") or []
+    rows: list[str] = []
+    seen: set[str] = set()
+
+    for part in parts:
+        if part.get("type") != "tool-call":
+            continue
+        key = str(part.get("toolCallId") or part.get("toolName") or len(rows))
+        if key in seen:
+            continue
+        seen.add(key)
+        args = part.get("args")
+        args_text = part.get("argsText")
+        if not args_text and isinstance(args, dict):
+            args_text = json.dumps(args, sort_keys=True)
+        rows.append(f"- `{part.get('toolName', 'tool')}` {args_text or ''}".rstrip())
+
+    if not rows:
+        for index, tool_call in enumerate(tool_calls or []):
+            key = str(tool_call.get("id") or index)
+            if key in seen:
+                continue
+            seen.add(key)
+            args = tool_call.get("args") if isinstance(tool_call, dict) else None
+            args_text = json.dumps(args or {}, sort_keys=True)
+            rows.append(
+                f"- `{tool_call.get('name', 'tool')}` {args_text}".rstrip()
+            )
+
+    if not rows:
+        return ""
+    return "### Tool Calls\n" + "\n".join(rows)
+
+
+def _render_sources(metadata: dict) -> str:
+    sources = metadata.get("sources") or []
+    if not sources:
+        return ""
+
+    rows = []
+    for source in sources:
+        label = f"`{source.get('source', 'Unknown source')}`"
+        details: list[str] = []
+        if source.get("page") is not None:
+            details.append(f"page {source['page']}")
+        if source.get("score") is not None:
+            details.append(f"score {float(source['score']):.2f}")
+        suffix = f" ({', '.join(details)})" if details else ""
+        rows.append(f"- {label}{suffix}")
+
+    return "### Sources\n" + "\n".join(rows)
+
+
+def _render_markdown_export(session: ChatSession, messages: list[ChatMessage]) -> str:
+    sections = [f"# {session.title or 'New chat'}"]
+    if session.project_id:
+        sections.append(f"_Project session: `{session.project_id}`_")
+
+    for index, message in enumerate(messages, start=1):
+        role_label = "User" if message.role == "user" else "Assistant"
+        body = (message.content or "").strip() or "_No content stored._"
+        metadata = message.metadata_ or {}
+
+        parts = [f"## {index}. {role_label}", body]
+        tool_section = _render_tool_calls(message.tool_calls, metadata)
+        if tool_section:
+            parts.append(tool_section)
+        source_section = _render_sources(metadata)
+        if source_section:
+            parts.append(source_section)
+        sections.append("\n\n".join(parts))
+
+    return "\n\n".join(sections).strip() + "\n"
 
 
 # --- Routes ---
@@ -176,6 +259,36 @@ async def get_messages(
         }
         for m in msgs
     ]
+
+
+@router.get("/{session_id}/export")
+async def export_session(
+    session_id: str,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(ChatSession).where(
+        ChatSession.id == session_id,
+        ChatSession.user_id == user.id,
+    )
+    session = (await db.execute(stmt)).scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    messages_stmt = (
+        select(ChatMessage)
+        .where(ChatMessage.chat_session_id == session_id)
+        .order_by(ChatMessage.created_at.asc())
+    )
+    messages = (await db.execute(messages_stmt)).scalars().all()
+
+    markdown = _render_markdown_export(session, messages)
+    filename = _export_filename(session.title)
+    return Response(
+        content=markdown,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/{session_id}/messages")

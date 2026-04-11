@@ -104,6 +104,15 @@ export interface Project {
   updatedAt: string;
 }
 
+export interface ProjectSearchResult {
+  id: string;
+  snippet: string;
+  source: string;
+  page: number | null;
+  score: number;
+  documentId: string | null;
+}
+
 export interface RetrievalSource {
   source: string;
   page: number | null;

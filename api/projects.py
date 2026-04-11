@@ -15,8 +15,10 @@ from database.core import get_db
 from database.models import User, Project, Document, ChatSession, ChatMessage
 from services.project_service import ProjectService
 from services.document_service import DocumentService
+from pipeline.retriever import retrieve
 from pipeline.storage import ensure_bucket, get_presigned_put_url, get_presigned_get_url
 from api.project_chat import project_chat_stream
+from api.session import session_owned_by_user
 from tasks.document_tasks import process_document_task
 
 from agents.registry import AGENTS
@@ -60,6 +62,11 @@ class ProjectChatRequest(BaseModel):
     message: str
     agent: Optional[str] = None
 
+
+class ProjectSearchRequest(BaseModel):
+    query: str
+    limit: int = 5
+
 # --- Project CRUD ---
 def _serialize_document(d):
     return {
@@ -85,6 +92,13 @@ def _serialize_project(p):
         "createdAt": p.created_at.isoformat() if hasattr(p, "created_at") and p.created_at else None,
         "updatedAt": p.updated_at.isoformat() if hasattr(p, "updated_at") and p.updated_at else None,
     }
+
+
+def _snippet(text: str, max_chars: int = 280) -> str:
+    normalized = " ".join((text or "").split())
+    if len(normalized) <= max_chars:
+        return normalized
+    return normalized[: max_chars - 1].rstrip() + "…"
 
 @router.get("")
 async def list_projects(
@@ -360,6 +374,53 @@ async def get_document_download_url(
 
     return {"url": url}
 
+
+@router.post("/{project_id}/search")
+async def search_project_documents(
+    project_id: str,
+    req: ProjectSearchRequest,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await ProjectService(db).get_project(project_id, user.id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    query = req.query.strip()
+    if not query:
+        return {"results": []}
+
+    chunk_count_stmt = select(func.coalesce(func.sum(Document.chunk_count), 0)).where(
+        Document.project_id == project_id,
+        Document.status == "ready",
+    )
+    chunk_count = int((await db.execute(chunk_count_stmt)).scalar_one() or 0)
+
+    try:
+        results = retrieve(
+            project_id=project_id,
+            query=query,
+            chunk_count=chunk_count,
+            top_k=max(1, min(req.limit, 10)),
+        )
+    except Exception as exc:
+        logger.error(f"project search failed: {exc}")
+        raise HTTPException(status_code=500, detail="Project search failed")
+
+    return {
+        "results": [
+            {
+                "id": result.get("id"),
+                "snippet": _snippet(result.get("text", "")),
+                "source": result.get("source", ""),
+                "page": result.get("page"),
+                "score": result.get("score", 0),
+                "documentId": result.get("document_id"),
+            }
+            for result in results
+        ]
+    }
+
 # --- Project Chat Sessions ---
 @router.get("/{project_id}/sessions")
 async def get_project_sessions(
@@ -462,6 +523,15 @@ async def project_chat_endpoint(
         if not project:
             raise HTTPException(404, "Project not found")
 
+        session_stmt = select(ChatSession).where(
+            ChatSession.project_id == project_id,
+            ChatSession.user_id == user.id,
+            ChatSession.backend_session_id == req.sessionId,
+        )
+        project_session = (await db.execute(session_stmt)).scalar_one_or_none()
+        if not project_session or not session_owned_by_user(req.sessionId, str(user.id)):
+            raise HTTPException(404, "Session not found")
+
         chunk_count_stmt = select(func.coalesce(func.sum(Document.chunk_count), 0)).where(
             Document.project_id == project_id,
             Document.status == "ready",
@@ -478,6 +548,8 @@ async def project_chat_endpoint(
             ),
             media_type="text/event-stream"
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"stream failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))

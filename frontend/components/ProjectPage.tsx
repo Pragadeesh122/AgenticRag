@@ -6,6 +6,8 @@ import {CaretLeft} from "@phosphor-icons/react/dist/ssr/CaretLeft";
 import {CaretRight} from "@phosphor-icons/react/dist/ssr/CaretRight";
 import {ArrowLeft} from "@phosphor-icons/react/dist/ssr/ArrowLeft";
 import {SignOut} from "@phosphor-icons/react/dist/ssr/SignOut";
+import {DownloadSimple} from "@phosphor-icons/react/dist/ssr/DownloadSimple";
+import {Key} from "@phosphor-icons/react/dist/ssr/Key";
 import ProjectSidebar from "@/components/ProjectSidebar";
 import ChatArea from "@/components/ChatArea";
 import {
@@ -14,11 +16,16 @@ import {
   uploadDocument,
   reingestDocument,
   deleteDocument,
+  downloadChatSessionMarkdown,
+  getDocumentDownloadUrl,
   pollDocumentStatus,
   createProjectSession,
   deleteProjectSession,
   restoreBackendSession,
+  searchProjectDocuments,
   streamProjectChat,
+  updateChatSession,
+  fetchProjectSessions,
   fetchMessages,
   saveMessages,
 } from "@/lib/api";
@@ -30,6 +37,7 @@ import type {
   ToolCall,
   ThinkingEntry,
   RetrievalSource,
+  ProjectSearchResult,
 } from "@/lib/types";
 import Link from "next/link";
 import {
@@ -121,6 +129,9 @@ export default function ProjectPage({
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(
     null
   );
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<ProjectSearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   const loadedSessionsRef = useRef<Set<string>>(new Set());
 
@@ -244,6 +255,82 @@ export default function ProjectPage({
     [projectId]
   );
 
+  const handleSearch = useCallback(async () => {
+    const query = searchQuery.trim();
+    if (!query) {
+      setSearchResults([]);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const results = await searchProjectDocuments(projectId, query, 5);
+      setSearchResults(results);
+    } catch (err) {
+      console.error("Project search failed:", err);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [projectId, searchQuery]);
+
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery("");
+    setSearchResults([]);
+  }, []);
+
+  const handleOpenSearchResult = useCallback(
+    async (result: ProjectSearchResult) => {
+      if (!result.documentId) return;
+      try {
+        const url = await getDocumentDownloadUrl(projectId, result.documentId);
+        window.open(url, "_blank", "noopener,noreferrer");
+      } catch (err) {
+        console.error("Failed to open search result:", err);
+      }
+    },
+    [projectId]
+  );
+
+  const handleExportSession = useCallback(async () => {
+    if (!activeSessionId) return;
+    try {
+      await downloadChatSessionMarkdown(activeSessionId);
+    } catch (err) {
+      console.error("Failed to export session:", err);
+    }
+  }, [activeSessionId]);
+
+  const refreshSessions = useCallback(async () => {
+    try {
+      const latestSessions = await fetchProjectSessions(projectId);
+      setSessions(latestSessions);
+    } catch (error) {
+      console.error("Failed to refresh project sessions:", error);
+    }
+  }, [projectId]);
+
+  const ensureSessionTitle = useCallback((sessionId: string, title: string) => {
+    if (!title || title === "New chat") return;
+
+    setSessions((prev) =>
+      prev.map((session) => {
+        if (session.id !== sessionId) return session;
+        return {
+          ...session,
+          title,
+          updatedAt: new Date().toISOString(),
+        };
+      })
+    );
+
+    updateChatSession(sessionId, {title})
+      .then(() => refreshSessions())
+      .catch((error) => {
+        console.error("Failed to persist project session title:", error);
+      });
+  }, [refreshSessions]);
+
   const updateMessages = useCallback(
     (sessionId: string, updater: (prev: Message[]) => Message[]) => {
       setMessagesBySession((prev) => {
@@ -331,6 +418,7 @@ export default function ProjectPage({
 
     const currentSessionId = sessionId;
     const persistedMessages = messagesBySession[currentSessionId] ?? [];
+    const isFirstTurn = persistedMessages.length === 0;
     const backendSessionId = currentSession?.backendSessionId;
 
     if (!backendSessionId) {
@@ -573,16 +661,20 @@ export default function ProjectPage({
             // Bump session to top
             setSessions((prev) => {
               const nowIso = new Date().toISOString();
-              const firstTitle = deriveSessionTitleFromFirstMessage(content);
               return prev.map((s) => {
                 if (s.id !== currentSessionId) return s;
                 return {
                   ...s,
                   updatedAt: nowIso,
-                  title: s.title === "New chat" ? firstTitle : s.title,
                 };
               });
             });
+            if (isFirstTurn) {
+              ensureSessionTitle(
+                currentSessionId,
+                deriveSessionTitleFromFirstMessage(content)
+              );
+            }
           } else if (event.type === "error") {
             finalToolCalls = finalToolCalls.map((t) =>
               t.status === "running" ? {...t, status: "error" as const} : t
@@ -703,6 +795,7 @@ export default function ProjectPage({
     sessions,
     messagesBySession,
     updateMessages,
+    ensureSessionTitle,
   ]);
 
   // ─── assistant-ui ExternalStoreRuntime ───
@@ -742,6 +835,13 @@ export default function ProjectPage({
             onDeleteDocument={handleDeleteDocument}
             isUploading={isUploading}
             reingestingDocumentId={reingestingDocumentId}
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
+            onSearch={handleSearch}
+            onClearSearch={handleClearSearch}
+            searchResults={searchResults}
+            isSearching={isSearching}
+            onOpenSearchResult={handleOpenSearchResult}
             sessions={sessions}
             activeSessionId={activeSessionId}
             onSelectSession={handleSelectSession}
@@ -784,8 +884,22 @@ export default function ProjectPage({
             )}
           </div>
 
+          <button
+            onClick={handleExportSession}
+            aria-label='Export chat'
+            disabled={!activeSessionId}
+            className='p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-white/8 transition-colors duration-100 disabled:opacity-40 disabled:cursor-not-allowed'>
+            <DownloadSimple size={18} aria-hidden='true' />
+          </button>
+
           {/* User */}
           <div className='flex items-center gap-1 ml-2 pl-2 border-l border-white/6'>
+            <Link
+              href='/auth/change-password'
+              aria-label='Change password'
+              className='p-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-white/8 transition-colors duration-100'>
+              <Key size={16} aria-hidden='true' />
+            </Link>
             {user.image ? (
               <Image
                 src={user.image}
