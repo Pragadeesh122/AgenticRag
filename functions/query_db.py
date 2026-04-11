@@ -57,36 +57,65 @@ BLOCKED_KEYWORDS = re.compile(
 MAX_ROWS = 50
 
 
+def _strip_sql_fences(text: str) -> str:
+    sql = text.strip()
+    if sql.startswith("```"):
+        sql = re.sub(r"^```(?:sql)?\n?", "", sql)
+        sql = re.sub(r"\n?```$", "", sql)
+    return sql.strip()
+
+
 def _validate_query(sql: str) -> str | None:
     """Validate that the query is read-only. Returns error message or None if valid."""
-    stripped = sql.strip().rstrip(";").strip()
+    stripped = _strip_sql_fences(sql).rstrip(";").strip()
 
-    if not stripped.upper().startswith("SELECT"):
+    if not stripped:
+        return "The model did not return a SQL query."
+
+    if ";" in stripped:
+        return "Only a single SELECT statement is allowed."
+
+    if "--" in stripped or "/*" in stripped or "*/" in stripped:
+        return "SQL comments are not allowed."
+
+    upper = stripped.upper()
+    if upper.startswith("WITH "):
+        if "SELECT" not in upper:
+            return "CTE queries must resolve to a SELECT statement."
+    elif not upper.startswith("SELECT"):
         return f"Only SELECT queries are allowed. Got: {stripped.split()[0]}"
 
     match = BLOCKED_KEYWORDS.search(stripped)
     if match:
         return f"Blocked keyword detected: {match.group()}"
 
-    # Enforce LIMIT — add one if missing and no aggregate
-    # (we don't reject, just let it through — DB user is read-only anyway)
     return None
 
 
 def _generate_sql(question: str) -> str:
-    """Ask the LLM to generate a SQL query for the question."""
+    """Ask the LLM to generate a structured SQL payload for the question."""
     response = llm_client.chat.completions.create(
         messages=[
-            {"role": "system", "content": get_sql_agent_prompt(DB_CONFIG)},
+            {
+                "role": "system",
+                "content": (
+                    f"{get_sql_agent_prompt(DB_CONFIG)}\n\n"
+                    "Return a JSON object with a single key named 'sql'. "
+                    "The value must be one read-only PostgreSQL SELECT query and nothing else."
+                ),
+            },
             {"role": "user", "content": question},
         ],
+        response_format={"type": "json_object"},
     )
-    sql = extract_first_text(response, "").strip()
-    # Strip markdown code fences if the model wraps it
-    if sql.startswith("```"):
-        sql = re.sub(r"^```(?:sql)?\n?", "", sql)
-        sql = re.sub(r"\n?```$", "", sql)
-    return sql.strip()
+    raw = extract_first_text(response, "{}").strip()
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("structured SQL generation returned malformed JSON")
+        return ""
+
+    return _strip_sql_fences(str(payload.get("sql", "")))
 
 
 def _serialize_value(val):
@@ -102,6 +131,7 @@ def _execute_query(sql: str) -> list[dict]:
     """Execute a read-only query and return results as a list of dicts."""
     conn = psycopg2.connect(**DB_CONFIG)
     try:
+        conn.set_session(readonly=True, autocommit=True)
         with conn.cursor() as cur:
             cur.execute(sql)
             columns = [desc[0] for desc in cur.description]
