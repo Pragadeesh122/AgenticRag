@@ -120,6 +120,26 @@ RETRIEVAL_RESULTS_COUNT = Histogram(
     ["agent_name"],
     buckets=(0, 1, 2, 3, 5, 8, 10, 15, 20, 30, 50, 100),
 )
+ORCHESTRATION_STEPS_TOTAL = Counter(
+    "agenticrag_orchestration_steps_total",
+    "General-chat orchestration step planning decisions.",
+    ["mode", "reason"],
+)
+ORCHESTRATION_TOOL_SELECTION_TOTAL = Counter(
+    "agenticrag_orchestration_tool_selection_total",
+    "Requested, executed, or suppressed tool-call counts during orchestration.",
+    ["mode", "selection"],
+)
+ORCHESTRATION_DUPLICATE_SUPPRESSIONS_TOTAL = Counter(
+    "agenticrag_orchestration_duplicate_suppressions_total",
+    "Duplicate tool-call suppressions by tool name.",
+    ["tool_name"],
+)
+TOOL_BUDGET_EXHAUSTED_TOTAL = Counter(
+    "agenticrag_tool_budget_exhausted_total",
+    "Count of turns that exhausted an orchestration budget.",
+    ["chat_type", "budget"],
+)
 
 
 def _field(obj: Any, key: str, default=None):
@@ -303,3 +323,46 @@ def observe_retrieval_results(*, agent_name: str, result_count: int) -> None:
     RETRIEVAL_RESULTS_COUNT.labels(agent_name=(agent_name or "unknown")).observe(
         max(result_count, 0)
     )
+
+
+def observe_orchestration_step(
+    *,
+    mode: str,
+    reason: str,
+    requested_calls: int,
+    executed_calls: int,
+    suppressed_calls: int,
+) -> None:
+    ORCHESTRATION_STEPS_TOTAL.labels(
+        mode=mode or "unknown",
+        reason=reason or "unknown",
+    ).inc()
+
+    if requested_calls > 0:
+        ORCHESTRATION_TOOL_SELECTION_TOTAL.labels(
+            mode=mode or "unknown",
+            selection="requested",
+        ).inc(requested_calls)
+    if executed_calls > 0:
+        ORCHESTRATION_TOOL_SELECTION_TOTAL.labels(
+            mode=mode or "unknown",
+            selection="executed",
+        ).inc(executed_calls)
+    if suppressed_calls > 0:
+        ORCHESTRATION_TOOL_SELECTION_TOTAL.labels(
+            mode=mode or "unknown",
+            selection="suppressed",
+        ).inc(suppressed_calls)
+
+
+def observe_orchestration_duplicate_suppression(*, tool_name: str) -> None:
+    ORCHESTRATION_DUPLICATE_SUPPRESSIONS_TOTAL.labels(
+        tool_name=tool_name or "unknown"
+    ).inc()
+
+
+def observe_tool_budget_exhausted(*, chat_type: str, budget: str) -> None:
+    TOOL_BUDGET_EXHAUSTED_TOTAL.labels(
+        chat_type=chat_type or "unknown",
+        budget=budget or "unknown",
+    ).inc()
