@@ -4,8 +4,10 @@ import json
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from functions import tool_policies
 from functions.tool_router import execute_tool_call
 from utils.streaming import iter_response, ToolCallProxy
+from utils.tool_planner import plan_tool_calls
 from utils.summarizer import summarize_messages
 from api.session import get_messages, save_messages, get_session_user
 from llm.response_utils import usage_tokens
@@ -13,7 +15,10 @@ from observability.context import pop_context, push_context
 from observability.metrics import (
     observe_agent_route,
     observe_max_tool_calls_reached,
+    observe_orchestration_duplicate_suppression,
+    observe_orchestration_step,
     observe_summarization,
+    observe_tool_budget_exhausted,
 )
 from services.chat_postprocess_service import (
     schedule_memory_persistence,
@@ -22,7 +27,9 @@ from services.chat_postprocess_service import (
 logger = logging.getLogger("api.chat")
 
 MAX_PROMPT_TOKENS = 5000
-MAX_TOOL_CALLS = 3
+MAX_REASONING_STEPS = 3
+MAX_TOTAL_TOOL_CALLS = 6
+MAX_PARALLEL_CALLS_PER_STEP = 3
 
 
 def _format_tool_thinking(name: str, args: dict) -> str:
@@ -68,6 +75,84 @@ def _format_result_summary(name: str, content: str) -> str:
     return f"Received results from {name}"
 
 
+def _execute_planned_calls(selected_calls, mode: str):
+    if not selected_calls:
+        return []
+
+    if mode != "parallel" or len(selected_calls) == 1:
+        planned = selected_calls[0]
+        proxy = ToolCallProxy(planned.tool_call)
+        return [(planned, execute_tool_call(proxy))]
+
+    proxies = [ToolCallProxy(planned.tool_call) for planned in selected_calls]
+    with ThreadPoolExecutor() as executor:
+        futures = {
+            executor.submit(execute_tool_call, proxy): (planned, proxy)
+            for planned, proxy in zip(selected_calls, proxies)
+        }
+        ordered_results = []
+        for future in as_completed(futures):
+            planned, proxy = futures[future]
+            ordered_results.append((planned, proxy, future.result()))
+
+    order = {planned.tool_call["id"]: index for index, planned in enumerate(selected_calls)}
+    ordered_results.sort(key=lambda item: order[item[0].tool_call["id"]])
+    return [(planned, result) for planned, _, result in ordered_results]
+
+
+def _stream_no_tool_response(messages: list[dict], guidance: str):
+    guidance_msg = {
+        "role": "system",
+        "content": guidance,
+    }
+    messages.append(guidance_msg)
+    try:
+        content = ""
+        final_tool_calls = None
+        usage = None
+        gen = iter_response(messages, use_tools=False)
+        try:
+            while True:
+                token = next(gen)
+                content += token
+                yield _sse("token", token)
+        except StopIteration as e:
+            content, final_tool_calls, usage = e.value
+        return content, final_tool_calls, usage
+    finally:
+        if guidance_msg in messages:
+            messages.remove(guidance_msg)
+
+
+def _force_final_answer(messages: list[dict], guidance: str):
+    content, final_tool_calls, usage = yield from _stream_no_tool_response(
+        messages, guidance
+    )
+
+    if (not (content or "").strip()) or final_tool_calls:
+        logger.warning(
+            "final no-tool pass returned empty/tool-calls; retrying with stricter no-tool instruction"
+        )
+        content, _, usage = yield from _stream_no_tool_response(
+            messages,
+            (
+                "Tool-call budget or orchestration policy has ended further tool use. "
+                "Do not call tools. Provide your best final answer using only the "
+                "existing tool outputs and conversation context."
+            ),
+        )
+
+    if not (content or "").strip():
+        logger.warning("final response still empty; sending graceful fallback text")
+        content = (
+            "I gathered the tool results, but couldn't generate a final response. "
+            "Please retry once and I will answer directly."
+        )
+        yield _sse("token", content)
+
+    return content, usage
+
+
 def chat_stream(session_id: str, user_message: str):
     """Generator that yields SSE-formatted events for a single user turn.
 
@@ -95,7 +180,10 @@ def chat_stream(session_id: str, user_message: str):
         messages = get_messages(session_id)
         messages.append({"role": "user", "content": user_message})
 
-        tool_call_count = 0
+        reasoning_step_count = 0
+        total_tool_calls = 0
+        tool_evidence_version = 0
+        last_evidence_by_fingerprint: dict[str, int] = {}
         prompt_tokens = 0
         tools_used = []
         full_content = ""
@@ -119,109 +207,158 @@ def chat_stream(session_id: str, user_message: str):
                 if usage:
                     prompt_tokens, _ = usage_tokens(usage)
 
-                if not tool_calls or tool_call_count >= MAX_TOOL_CALLS:
-                    if tool_call_count >= MAX_TOOL_CALLS:
-                        logger.info(f"max tool calls reached ({MAX_TOOL_CALLS})")
-                        observe_max_tool_calls_reached(chat_type="general")
-                        stop_msg = {
-                            "role": "system",
-                            "content": (
-                                "You have reached the maximum number of tool calls. "
-                                "Do NOT attempt any more tool calls. Respond with the "
-                                "best answer you can based on the information gathered."
-                            ),
-                        }
-                        messages.append(stop_msg)
-
-                        # Final response without tools
-                        gen = iter_response(messages, use_tools=False)
-                        content = ""
-                        final_tool_calls = None
-                        try:
-                            while True:
-                                token = next(gen)
-                                content += token
-                                yield _sse("token", token)
-                        except StopIteration as e:
-                            content, final_tool_calls, usage = e.value
-
-                        if (not (content or "").strip()) or final_tool_calls:
-                            logger.warning(
-                                "final no-tool pass returned empty/tool-calls after max tools; "
-                                "retrying with stricter no-tool instruction on same model"
-                            )
-                            fallback_msg = {
-                                "role": "system",
-                                "content": (
-                                    "Tool-call budget is exhausted. Do not call tools. "
-                                    "Provide your best final answer using only the existing "
-                                    "tool outputs and conversation context."
-                                ),
-                            }
-                            messages.append(fallback_msg)
-                            gen = iter_response(messages, use_tools=False)
-                            content = ""
-                            try:
-                                while True:
-                                    token = next(gen)
-                                    content += token
-                                    yield _sse("token", token)
-                            except StopIteration as e:
-                                content, _, usage = e.value
-                            messages.remove(fallback_msg)
-
-                        if not (content or "").strip():
-                            logger.warning("final response still empty; sending graceful fallback text")
-                            content = (
-                                "I gathered the tool results, but couldn't generate a final response. "
-                                "Please retry once and I will answer directly."
-                            )
-                            yield _sse("token", content)
-
-                        messages.remove(stop_msg)
-                        if usage:
-                            prompt_tokens, _ = usage_tokens(usage)
-
+                if not tool_calls:
                     full_content = content
                     break
 
-                # Process tool calls
-                tool_call_count += 1
-                tool_names = [tc["function"]["name"] for tc in tool_calls]
-                tools_used.extend(tool_names)
-                logger.info(f"tool_calls: {tool_names} ({tool_call_count}/{MAX_TOOL_CALLS})")
+                if reasoning_step_count >= MAX_REASONING_STEPS:
+                    logger.info(
+                        "max reasoning steps reached (%s)", MAX_REASONING_STEPS
+                    )
+                    observe_tool_budget_exhausted(
+                        chat_type="general", budget="reasoning_steps"
+                    )
+                    full_content, usage = yield from _force_final_answer(
+                        messages,
+                        (
+                            "You have reached the maximum number of reasoning steps that can "
+                            "use tools. Do not call more tools. Respond with the best answer "
+                            "you can based on the information already gathered."
+                        ),
+                    )
+                    if usage:
+                        prompt_tokens, _ = usage_tokens(usage)
+                    break
 
-                for tc in tool_calls:
-                    name = tc["function"]["name"]
-                    try:
-                        args = json.loads(tc["function"]["arguments"])
-                    except (json.JSONDecodeError, KeyError):
-                        args = {}
-                    # Emit thinking step about what we're about to do
-                    yield _sse("thinking", json.dumps({"content": _format_tool_thinking(name, args)}))
-                    yield _sse("tool", json.dumps({"name": name, "args": args}))
+                if total_tool_calls >= MAX_TOTAL_TOOL_CALLS:
+                    logger.info(
+                        "max total tool calls reached (%s)", MAX_TOTAL_TOOL_CALLS
+                    )
+                    observe_max_tool_calls_reached(chat_type="general")
+                    observe_tool_budget_exhausted(
+                        chat_type="general", budget="total_tool_calls"
+                    )
+                    full_content, usage = yield from _force_final_answer(
+                        messages,
+                        (
+                            "You have reached the maximum number of tool calls. Do not "
+                            "attempt any more tool calls. Respond with the best answer "
+                            "you can based on the information gathered."
+                        ),
+                    )
+                    if usage:
+                        prompt_tokens, _ = usage_tokens(usage)
+                    break
 
-                messages.append(
-                    {"role": "assistant", "tool_calls": tool_calls, "content": None}
+                plan = plan_tool_calls(
+                    tool_calls,
+                    tool_policies=tool_policies,
+                    last_evidence_by_fingerprint=last_evidence_by_fingerprint,
+                    current_evidence_version=tool_evidence_version,
+                    max_parallel_calls_per_step=MAX_PARALLEL_CALLS_PER_STEP,
+                )
+                observe_orchestration_step(
+                    mode=plan.mode,
+                    reason=plan.reason,
+                    requested_calls=plan.requested_count,
+                    executed_calls=len(plan.selected_calls),
+                    suppressed_calls=len(plan.suppressed_calls),
                 )
 
-                # Execute tools
-                proxies = [ToolCallProxy(tc) for tc in tool_calls]
-                with ThreadPoolExecutor() as executor:
-                    futures = {
-                        executor.submit(execute_tool_call, p): p for p in proxies
+                for suppressed in plan.suppressed_calls:
+                    if suppressed.reason.startswith("duplicate"):
+                        observe_orchestration_duplicate_suppression(
+                            tool_name=suppressed.planned_call.tool_name
+                        )
+
+                if not plan.selected_calls:
+                    logger.info("all tool calls suppressed; forcing final answer")
+                    full_content, usage = yield from _force_final_answer(
+                        messages,
+                        (
+                            "A repeated or redundant tool call was suppressed because no new "
+                            "tool evidence was available. Do not repeat the same tool call. "
+                            "Provide your best final answer using the existing tool outputs."
+                        ),
+                    )
+                    if usage:
+                        prompt_tokens, _ = usage_tokens(usage)
+                    break
+
+                if len(plan.selected_calls) > (MAX_TOTAL_TOOL_CALLS - total_tool_calls):
+                    logger.info("remaining tool budget is smaller than planned batch")
+                    observe_max_tool_calls_reached(chat_type="general")
+                    observe_tool_budget_exhausted(
+                        chat_type="general", budget="total_tool_calls"
+                    )
+                    full_content, usage = yield from _force_final_answer(
+                        messages,
+                        (
+                            "The remaining tool budget is exhausted. Do not call more tools. "
+                            "Provide your best final answer using the information already gathered."
+                        ),
+                    )
+                    if usage:
+                        prompt_tokens, _ = usage_tokens(usage)
+                    break
+
+                selected_tool_names = [
+                    planned.tool_name for planned in plan.selected_calls
+                ]
+                tools_used.extend(selected_tool_names)
+                logger.info(
+                    "tool_calls (%s): %s (step %s/%s, total %s/%s)",
+                    plan.mode,
+                    selected_tool_names,
+                    reasoning_step_count + 1,
+                    MAX_REASONING_STEPS,
+                    total_tool_calls,
+                    MAX_TOTAL_TOOL_CALLS,
+                )
+
+                for planned in plan.selected_calls:
+                    yield _sse(
+                        "thinking",
+                        json.dumps(
+                            {
+                                "content": _format_tool_thinking(
+                                    planned.tool_name, planned.args
+                                )
+                            }
+                        ),
+                    )
+                    yield _sse(
+                        "tool",
+                        json.dumps(
+                            {"name": planned.tool_name, "args": planned.args}
+                        ),
+                    )
+
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "tool_calls": [
+                            planned.tool_call for planned in plan.selected_calls
+                        ],
+                        "content": None,
                     }
-                    results = []
-                    for future in as_completed(futures):
-                        results.append((futures[future], future.result()))
-                    order = {p.id: i for i, p in enumerate(proxies)}
-                    results.sort(key=lambda r: order[r[0].id])
-                    for proxy, result in results:
-                        messages.append(result)
-                        # Emit thinking step about result
-                        result_content = result.get("content", "")
-                        summary = _format_result_summary(proxy.function.name, result_content)
-                        yield _sse("thinking", json.dumps({"content": summary}))
+                )
+
+                results = _execute_planned_calls(plan.selected_calls, plan.mode)
+                for planned, result in results:
+                    messages.append(result)
+                    tool_evidence_version += 1
+                    last_evidence_by_fingerprint[
+                        planned.fingerprint
+                    ] = tool_evidence_version
+                    result_content = result.get("content", "")
+                    summary = _format_result_summary(
+                        planned.tool_name, result_content
+                    )
+                    yield _sse("thinking", json.dumps({"content": summary}))
+
+                reasoning_step_count += 1
+                total_tool_calls += len(results)
 
         except Exception as e:
             logger.error(f"chat failed: {e}")
