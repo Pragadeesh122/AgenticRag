@@ -7,8 +7,9 @@ import { ChatTeardropDots } from '@phosphor-icons/react/dist/ssr/ChatTeardropDot
 import { FolderSimple } from '@phosphor-icons/react/dist/ssr/FolderSimple';
 import { Plus } from '@phosphor-icons/react/dist/ssr/Plus';
 import { AgenticLogo } from './ChatArea';
+import SidebarAccountFooter from './SidebarAccountFooter';
 import { createProject, deleteProject } from '@/lib/api';
-import type { Session, Project } from '@/lib/types';
+import type { Session, Project, User } from '@/lib/types';
 
 function parseSessionTime(value: string): number {
   if (!value) return 0;
@@ -58,6 +59,8 @@ interface SidebarProps {
   onNewChat: () => void;
   onDeleteSession: (id: string) => void;
   initialProjects?: Project[];
+  user: Pick<User, 'name' | 'email' | 'image'>;
+  onSignOut: () => void;
 }
 
 interface SessionGroupProps {
@@ -115,6 +118,8 @@ export default function Sidebar({
   onNewChat,
   onDeleteSession,
   initialProjects = [],
+  user,
+  onSignOut,
 }: SidebarProps) {
   const { today, yesterday, older } = groupSessionsByTime(sessions);
   const [projects, setProjects] = useState<Project[]>(initialProjects);
@@ -270,6 +275,7 @@ export default function Sidebar({
           </>
         )}
       </nav>
+      <SidebarAccountFooter user={user} onSignOut={onSignOut} />
     </aside>
   );
 }

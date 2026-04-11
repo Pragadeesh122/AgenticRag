@@ -5,13 +5,9 @@ import { signOut } from "@/lib/api";
 import {CaretLeft} from "@phosphor-icons/react/dist/ssr/CaretLeft";
 import {CaretRight} from "@phosphor-icons/react/dist/ssr/CaretRight";
 import {PencilSimpleLineIcon} from "@phosphor-icons/react/dist/ssr/PencilSimpleLine";
-import {SignOut} from "@phosphor-icons/react/dist/ssr/SignOut";
 import {Brain} from "@phosphor-icons/react/dist/ssr/Brain";
 import {DownloadSimple} from "@phosphor-icons/react/dist/ssr/DownloadSimple";
-import {Key} from "@phosphor-icons/react/dist/ssr/Key";
 import {useExternalStoreRuntime, AssistantRuntimeProvider} from "@assistant-ui/react";
-import Image from "next/image";
-import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
 import ChatArea from "@/components/ChatArea";
 import MemoryPanel from "@/components/MemoryPanel";
@@ -39,16 +35,12 @@ import {
   getDefaultAssistantStatus,
   markRunningToolParts,
 } from "@/lib/messageParts";
-import type {Session, Message, ToolCall, ThinkingEntry, Project, RetrievalSource} from "@/lib/types";
+import type {Session, Message, ToolCall, ThinkingEntry, Project, RetrievalSource, User} from "@/lib/types";
 
 interface ChatPageProps {
   initialSessions?: Session[];
   initialProjects?: Project[];
-  user: {
-    name?: string | null;
-    email?: string | null;
-    image?: string | null;
-  };
+  user: Pick<User, "name" | "email" | "image">;
 }
 
 function generateLocalId(): string {
@@ -230,6 +222,10 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
         console.error("Failed to persist session title:", error);
       });
   }, [refreshSessions]);
+
+  const handleSignOut = useCallback(() => {
+    signOut();
+  }, []);
 
   const handleSubmit = useCallback(async () => {
     const content = inputValue.trim();
@@ -580,6 +576,8 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
             onNewChat={handleNewChat}
             onDeleteSession={handleDeleteSession}
             initialProjects={initialProjects}
+            user={user}
+            onSignOut={handleSignOut}
           />
         </div>
       </div>
@@ -628,36 +626,6 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
               className='p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-white/8 transition-colors duration-100 disabled:opacity-40 disabled:cursor-not-allowed'>
               <DownloadSimple size={18} aria-hidden='true' />
             </button>
-
-            {/* User menu */}
-            <div className='flex items-center gap-1 ml-2 pl-2 border-l border-white/6'>
-              <Link
-                href='/auth/change-password'
-                aria-label='Change password'
-                className='p-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-white/8 transition-colors duration-100'>
-                <Key size={16} aria-hidden='true' />
-              </Link>
-              {user.image ? (
-                <Image
-                  src={user.image}
-                  alt={user.name || "User"}
-                  className='h-6 w-6 rounded-full'
-                  width={24}
-                  height={24}
-                  referrerPolicy='no-referrer'
-                />
-              ) : (
-                <div className='w-6 h-6 rounded-full bg-violet-600/30 flex items-center justify-center text-xs font-medium text-violet-300'>
-                  {user.name?.charAt(0) || user.email?.charAt(0) || "?"}
-                </div>
-              )}
-              <button
-                onClick={() => signOut()}
-                aria-label='Sign out'
-                className='p-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-white/8 transition-colors duration-100'>
-                <SignOut size={16} aria-hidden='true' />
-              </button>
-            </div>
           </div>
         </header>
 

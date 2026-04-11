@@ -5,9 +5,7 @@ import {signOut} from "@/lib/api";
 import {CaretLeft} from "@phosphor-icons/react/dist/ssr/CaretLeft";
 import {CaretRight} from "@phosphor-icons/react/dist/ssr/CaretRight";
 import {ArrowLeft} from "@phosphor-icons/react/dist/ssr/ArrowLeft";
-import {SignOut} from "@phosphor-icons/react/dist/ssr/SignOut";
 import {DownloadSimple} from "@phosphor-icons/react/dist/ssr/DownloadSimple";
-import {Key} from "@phosphor-icons/react/dist/ssr/Key";
 import ProjectSidebar from "@/components/ProjectSidebar";
 import ChatArea from "@/components/ChatArea";
 import {
@@ -38,6 +36,7 @@ import type {
   ThinkingEntry,
   RetrievalSource,
   ProjectSearchResult,
+  User,
 } from "@/lib/types";
 import Link from "next/link";
 import {
@@ -45,7 +44,6 @@ import {
   useExternalStoreRuntime,
 } from "@assistant-ui/react";
 import {convertMessage} from "@/lib/chatRuntime";
-import Image from "next/image";
 import {
   appendDataPart,
   appendReasoningPart,
@@ -61,11 +59,7 @@ interface ProjectPageProps {
   initialProject: Project;
   initialSessions: Session[];
   projectId: string;
-  user: {
-    name?: string | null;
-    email?: string | null;
-    image?: string | null;
-  };
+  user: Pick<User, "name" | "email" | "image">;
 }
 
 function generateLocalId(): string {
@@ -273,6 +267,10 @@ export default function ProjectPage({
       setIsSearching(false);
     }
   }, [projectId, searchQuery]);
+
+  const handleSignOut = useCallback(() => {
+    signOut();
+  }, []);
 
   const handleClearSearch = useCallback(() => {
     setSearchQuery("");
@@ -847,6 +845,8 @@ export default function ProjectPage({
             onSelectSession={handleSelectSession}
             onNewChat={handleNewChat}
             onDeleteSession={handleDeleteSession}
+            user={user}
+            onSignOut={handleSignOut}
           />
         </div>
       </div>
@@ -891,36 +891,6 @@ export default function ProjectPage({
             className='p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-white/8 transition-colors duration-100 disabled:opacity-40 disabled:cursor-not-allowed'>
             <DownloadSimple size={18} aria-hidden='true' />
           </button>
-
-          {/* User */}
-          <div className='flex items-center gap-1 ml-2 pl-2 border-l border-white/6'>
-            <Link
-              href='/auth/change-password'
-              aria-label='Change password'
-              className='p-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-white/8 transition-colors duration-100'>
-              <Key size={16} aria-hidden='true' />
-            </Link>
-            {user.image ? (
-              <Image
-                src={user.image}
-                alt={user.name || "User"}
-                className='h-6 w-6 rounded-full'
-                width={24}
-                height={24}
-                referrerPolicy='no-referrer'
-              />
-            ) : (
-              <div className='w-6 h-6 rounded-full bg-violet-600/30 flex items-center justify-center text-xs font-medium text-violet-300'>
-                {user.name?.charAt(0) || user.email?.charAt(0) || "?"}
-              </div>
-            )}
-            <button
-              onClick={() => signOut()}
-              aria-label='Sign out'
-              className='p-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-white/8 transition-colors duration-100'>
-              <SignOut size={16} aria-hidden='true' />
-            </button>
-          </div>
         </header>
 
         {/* Chat area */}

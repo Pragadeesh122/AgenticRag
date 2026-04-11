@@ -23,7 +23,8 @@ import { MagnifyingGlass } from '@phosphor-icons/react/dist/ssr/MagnifyingGlass'
 import { X } from '@phosphor-icons/react/dist/ssr/X';
 import { ArrowSquareOut } from '@phosphor-icons/react/dist/ssr/ArrowSquareOut';
 import { AgenticLogo } from './ChatArea';
-import type { Project, AgentInfo, Session, ProjectSearchResult } from '@/lib/types';
+import SidebarAccountFooter from './SidebarAccountFooter';
+import type { Project, AgentInfo, Session, ProjectSearchResult, User } from '@/lib/types';
 
 const AGENT_ICONS: Record<string, React.ReactNode> = {
   reasoning: <Brain size={16} className="text-violet-400" />,
@@ -91,6 +92,8 @@ interface ProjectSidebarProps {
   onSelectSession: (id: string) => void;
   onNewChat: () => void;
   onDeleteSession: (id: string) => void;
+  user: Pick<User, 'name' | 'email' | 'image'>;
+  onSignOut: () => void;
 }
 
 export default function ProjectSidebar({
@@ -115,6 +118,8 @@ export default function ProjectSidebar({
   onSelectSession,
   onNewChat,
   onDeleteSession,
+  user,
+  onSignOut,
 }: ProjectSidebarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const replaceFileInputRef = useRef<HTMLInputElement>(null);
@@ -430,6 +435,7 @@ export default function ProjectSidebar({
           )}
         </div>
       </nav>
+      <SidebarAccountFooter user={user} onSignOut={onSignOut} />
     </aside>
   );
 }
