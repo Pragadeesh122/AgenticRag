@@ -13,7 +13,13 @@ SCHEMA = {
     "type": "function",
     "function": {
         "name": "portfolio",
-        "description": "Use this function whenever a question is asked about an individual named Pragadeesh",
+        "description": (
+            "Search the Pragadeesh portfolio knowledge index for information about that person, their work, "
+            "projects, or background. Use this for targeted portfolio lookups only. "
+            "Do not use it for general web search or unrelated factual questions. "
+            "Run one lookup first and only try a different formulation if the first result is insufficient. "
+            "It returns a list of relevant portfolio passages with source information."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -28,6 +34,13 @@ SCHEMA = {
 }
 
 CACHEABLE = True
+POLICY = {
+    "execution_mode": "sequential_first",
+    "max_parallel_instances": 1,
+    "requires_fresh_input": True,
+    "dedupe_key_fields": ("query",),
+    "verification_only_after_result": True,
+}
 
 
 def portfolio(query: str) -> list:

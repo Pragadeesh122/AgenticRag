@@ -19,10 +19,12 @@ SCHEMA = {
     "function": {
         "name": "query_db",
         "description": (
-            "Query the e-commerce database to answer questions about customers, "
-            "products, orders, reviews, and categories. Use this for any question "
-            "that involves structured data like sales, inventory, customer info, "
-            "order history, or product reviews."
+            "Query the e-commerce database for structured facts about customers, "
+            "products, orders, reviews, and categories. Use this when the answer must come "
+            "from structured relational data such as sales, inventory, customer records, or "
+            "order history. Do not use it for web facts or document content. "
+            "Use one query first, then decide on follow-up questions from the result; do not "
+            "assume parallel DB fan-out is needed. It returns JSON with either {sql, rows, count} or {error, sql}."
         ),
         "parameters": {
             "type": "object",
@@ -38,6 +40,13 @@ SCHEMA = {
 }
 
 CACHEABLE = True
+POLICY = {
+    "execution_mode": "sequential_first",
+    "max_parallel_instances": 1,
+    "requires_fresh_input": True,
+    "dedupe_key_fields": ("question",),
+    "verification_only_after_result": True,
+}
 
 # Read-only DB connection config — uses the llm_reader user
 DB_CONFIG = {

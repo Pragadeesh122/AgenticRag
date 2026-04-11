@@ -16,7 +16,13 @@ SCHEMA = {
     "type": "function",
     "function": {
         "name": "query_local_kb",
-        "description": "Search the local knowledge base for information about Citro Essential Oils Distillery Industry, essential oils, their products, processes, or any related company data.",
+        "description": (
+            "Search the local knowledge base for information about Citro Essential Oils Distillery Industry, "
+            "essential oils, related products, processes, or company data. Use this for targeted knowledge-base lookups. "
+            "Do not use it for live web facts or exact webpage extraction. "
+            "Run one lookup first and only reformulate after seeing the result. "
+            "It returns a list of relevant snippets with source and similarity score."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -31,6 +37,13 @@ SCHEMA = {
 }
 
 CACHEABLE = True
+POLICY = {
+    "execution_mode": "sequential_first",
+    "max_parallel_instances": 1,
+    "requires_fresh_input": True,
+    "dedupe_key_fields": ("query",),
+    "verification_only_after_result": True,
+}
 
 
 def build_index(documents: list[dict]):
