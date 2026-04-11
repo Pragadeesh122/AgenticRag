@@ -148,6 +148,7 @@ services:
       dockerfile: Dockerfile.dev
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
+      INTERNAL_API_URL: http://api:8000
     command: yarn dev --hostname 0.0.0.0 --port 3000
     volumes:
       - ./frontend:/app
