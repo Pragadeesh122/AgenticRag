@@ -40,6 +40,7 @@ import type {Session, Message, ToolCall, ThinkingEntry, Project, RetrievalSource
 interface ChatPageProps {
   initialSessions?: Session[];
   initialProjects?: Project[];
+  renderedAt: string;
   user: Pick<User, "name" | "email" | "image">;
 }
 
@@ -77,7 +78,12 @@ function extractComposerText(message: { content: unknown }): string {
     .join("\n");
 }
 
-export default function ChatPage({initialSessions = [], initialProjects = [], user}: ChatPageProps) {
+export default function ChatPage({
+  initialSessions = [],
+  initialProjects = [],
+  renderedAt,
+  user,
+}: ChatPageProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [sessions, setSessions] = useState<Session[]>(initialSessions);
@@ -569,16 +575,17 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
         }`}
         aria-hidden={!sidebarOpen}>
         <div className='w-[260px] h-full'>
-          <Sidebar
-            sessions={sessions}
-            activeSessionId={activeSessionId}
-            onSelectSession={handleSelectSession}
-            onNewChat={handleNewChat}
-            onDeleteSession={handleDeleteSession}
-            initialProjects={initialProjects}
-            user={user}
-            onSignOut={handleSignOut}
-          />
+        <Sidebar
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSelectSession={handleSelectSession}
+          onNewChat={handleNewChat}
+          onDeleteSession={handleDeleteSession}
+          initialProjects={initialProjects}
+          referenceTime={renderedAt}
+          user={user}
+          onSignOut={handleSignOut}
+        />
         </div>
       </div>
 

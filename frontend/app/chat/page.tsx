@@ -27,6 +27,7 @@ export default async function ChatDashboard() {
     <ChatPage
       initialSessions={sessions}
       initialProjects={projects}
+      renderedAt={new Date().toISOString()}
       user={{
         name: user.name || "",
         email: user.email || "",

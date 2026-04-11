@@ -20,14 +20,18 @@ function parseSessionTime(value: string): number {
   return Number.isNaN(ts) ? 0 : ts;
 }
 
-function groupSessionsByTime(sessions: Session[]): {
+function groupSessionsByTime(
+  sessions: Session[],
+  referenceTime: string
+): {
   today: Session[];
   yesterday: Session[];
   older: Session[];
 } {
   const oneDayMs = 24 * 60 * 60 * 1000;
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
+  const referenceTs = parseSessionTime(referenceTime);
+  const startOfToday = new Date(referenceTs || Date.now());
+  startOfToday.setUTCHours(0, 0, 0, 0);
   const startOfYesterday = new Date(startOfToday.getTime() - oneDayMs);
 
   const today: Session[] = [];
@@ -59,6 +63,7 @@ interface SidebarProps {
   onNewChat: () => void;
   onDeleteSession: (id: string) => void;
   initialProjects?: Project[];
+  referenceTime: string;
   user: Pick<User, 'name' | 'email' | 'image'>;
   onSignOut: () => void;
 }
@@ -118,10 +123,14 @@ export default function Sidebar({
   onNewChat,
   onDeleteSession,
   initialProjects = [],
+  referenceTime,
   user,
   onSignOut,
 }: SidebarProps) {
-  const { today, yesterday, older } = groupSessionsByTime(sessions);
+  const { today, yesterday, older } = groupSessionsByTime(
+    sessions,
+    referenceTime
+  );
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
