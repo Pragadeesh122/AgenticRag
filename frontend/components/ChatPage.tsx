@@ -7,8 +7,11 @@ import {CaretRight} from "@phosphor-icons/react/dist/ssr/CaretRight";
 import {PencilSimpleLineIcon} from "@phosphor-icons/react/dist/ssr/PencilSimpleLine";
 import {SignOut} from "@phosphor-icons/react/dist/ssr/SignOut";
 import {Brain} from "@phosphor-icons/react/dist/ssr/Brain";
+import {DownloadSimple} from "@phosphor-icons/react/dist/ssr/DownloadSimple";
+import {Key} from "@phosphor-icons/react/dist/ssr/Key";
 import {useExternalStoreRuntime, AssistantRuntimeProvider} from "@assistant-ui/react";
 import Image from "next/image";
+import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
 import ChatArea from "@/components/ChatArea";
 import MemoryPanel from "@/components/MemoryPanel";
@@ -19,8 +22,10 @@ import {
   restoreBackendSession,
   streamChat,
   createChatSession,
+  downloadChatSessionMarkdown,
   updateChatSession,
   deleteChatSession,
+  fetchSessions,
   fetchMessages,
   saveMessages,
 } from "@/lib/api";
@@ -187,6 +192,45 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
     [sessions]
   );
 
+  const handleExportSession = useCallback(async () => {
+    if (!activeSessionId) return;
+    try {
+      await downloadChatSessionMarkdown(activeSessionId);
+    } catch (err) {
+      console.error("Failed to export session:", err);
+    }
+  }, [activeSessionId]);
+
+  const refreshSessions = useCallback(async () => {
+    try {
+      const latestSessions = await fetchSessions();
+      setSessions(latestSessions);
+    } catch (error) {
+      console.error("Failed to refresh sessions:", error);
+    }
+  }, []);
+
+  const ensureSessionTitle = useCallback((sessionId: string, title: string) => {
+    if (!title || title === "New chat") return;
+
+    setSessions((prev) =>
+      prev.map((session) => {
+        if (session.id !== sessionId) return session;
+        return {
+          ...session,
+          title,
+          updatedAt: new Date().toISOString(),
+        };
+      })
+    );
+
+    updateChatSession(sessionId, {title})
+      .then(() => refreshSessions())
+      .catch((error) => {
+        console.error("Failed to persist session title:", error);
+      });
+  }, [refreshSessions]);
+
   const handleSubmit = useCallback(async () => {
     const content = inputValue.trim();
     if (!content || isLoading) return;
@@ -210,6 +254,7 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
 
     const currentSessionId = sessionId;
     const persistedMessages = messagesBySession[currentSessionId] ?? [];
+    const isFirstTurn = persistedMessages.length === 0;
 
     let backendSessionId =
       sessions.find((s) => s.id === currentSessionId)?.backendSessionId ??
@@ -222,9 +267,7 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
             s.id === currentSessionId ? {...s, backendSessionId} : s
           )
         );
-        updateChatSession(currentSessionId, {backendSessionId}).catch(
-          console.error
-        );
+        await updateChatSession(currentSessionId, {backendSessionId});
       } catch (err) {
         console.error("Failed to create backend session:", err);
         return;
@@ -408,16 +451,20 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
           // Bump session to top
           setSessions((prev) => {
             const nowIso = new Date().toISOString();
-            const firstTitle = deriveSessionTitleFromFirstMessage(content);
             return prev.map((s) => {
               if (s.id !== currentSessionId) return s;
               return {
                 ...s,
                 updatedAt: nowIso,
-                title: s.title === "New chat" ? firstTitle : s.title,
               };
             });
           });
+          if (isFirstTurn) {
+            ensureSessionTitle(
+              currentSessionId,
+              deriveSessionTitleFromFirstMessage(content)
+            );
+          }
         } else if (event.type === "error") {
           finalToolCalls = finalToolCalls.map((t) =>
             t.status === "running" ? { ...t, status: "error" as const } : t
@@ -497,7 +544,7 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
       setIsLoading(false);
       setStreamingMessageId(null);
     }
-  }, [inputValue, isLoading, activeSessionId, sessions, messagesBySession, updateMessages]);
+  }, [inputValue, isLoading, activeSessionId, sessions, messagesBySession, updateMessages, ensureSessionTitle]);
 
   // ─── assistant-ui ExternalStoreRuntime ───
   // Bridge our message state to assistant-ui's runtime so its primitives
@@ -574,9 +621,22 @@ export default function ChatPage({initialSessions = [], initialProjects = [], us
               className='p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-white/8 transition-colors duration-100'>
               <PencilSimpleLineIcon size={18} aria-hidden='true' />
             </button>
+            <button
+              onClick={handleExportSession}
+              aria-label='Export chat'
+              disabled={!activeSessionId}
+              className='p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-white/8 transition-colors duration-100 disabled:opacity-40 disabled:cursor-not-allowed'>
+              <DownloadSimple size={18} aria-hidden='true' />
+            </button>
 
             {/* User menu */}
             <div className='flex items-center gap-1 ml-2 pl-2 border-l border-white/6'>
+              <Link
+                href='/auth/change-password'
+                aria-label='Change password'
+                className='p-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-white/8 transition-colors duration-100'>
+                <Key size={16} aria-hidden='true' />
+              </Link>
               {user.image ? (
                 <Image
                   src={user.image}
