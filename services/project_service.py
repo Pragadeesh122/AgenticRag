@@ -23,9 +23,11 @@ class ProjectService:
             "name": name,
             "description": description,
         })
-        project.documents = []
         await self.session.commit()
-        return project
+        created_project = await self.repo.get_by_id_for_user(project.id, user_id)
+        if not created_project:
+            raise HTTPException(status_code=500, detail="Project creation failed")
+        return created_project
 
     async def delete_project(self, project_id: str, user_id: uuid.UUID):
         project = await self.get_project(project_id, user_id)
