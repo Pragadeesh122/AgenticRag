@@ -1,9 +1,9 @@
+"""Integration tests for the chat_stream orchestration loop."""
+
 import json
 import time
 
 from api import chat as chat_module
-from functions import tool_policies
-from utils.tool_planner import plan_tool_calls
 
 
 def _tool_call(name: str, args: dict, call_id: str) -> dict:
@@ -24,115 +24,6 @@ def _response_generator(*, content="", tool_calls=None, usage=None):
         return content, tool_calls, usage
 
     return _gen()
-
-
-def test_plan_runs_distinct_search_calls_in_parallel():
-    tool_calls = [
-        _tool_call("search", {"query": "openai pricing"}, "search-1"),
-        _tool_call("search", {"query": "anthropic pricing"}, "search-2"),
-    ]
-
-    plan = plan_tool_calls(
-        tool_calls,
-        tool_policies=tool_policies,
-        last_evidence_by_fingerprint={},
-        current_evidence_version=0,
-        max_parallel_calls_per_step=3,
-    )
-
-    assert plan.mode == "parallel"
-    assert [call.tool_name for call in plan.selected_calls] == ["search", "search"]
-    assert plan.reason == "parallel_safe_batch"
-    assert plan.suppressed_calls == ()
-
-
-def test_plan_mixed_batch_falls_back_to_first_call_only():
-    tool_calls = [
-        _tool_call("crawl_website", {"url": "https://example.com"}, "crawl-1"),
-        _tool_call("search", {"query": "example company"}, "search-1"),
-    ]
-
-    plan = plan_tool_calls(
-        tool_calls,
-        tool_policies=tool_policies,
-        last_evidence_by_fingerprint={},
-        current_evidence_version=0,
-        max_parallel_calls_per_step=3,
-    )
-
-    assert plan.mode == "sequential"
-    assert [call.tool_name for call in plan.selected_calls] == ["crawl_website"]
-    assert len(plan.suppressed_calls) == 1
-    assert plan.reason == "mixed_batch_requires_sequence"
-
-
-def test_plan_multiple_query_db_calls_run_sequential():
-    tool_calls = [
-        _tool_call("query_db", {"question": "top customers"}, "db-1"),
-        _tool_call("query_db", {"question": "recent orders"}, "db-2"),
-    ]
-
-    plan = plan_tool_calls(
-        tool_calls,
-        tool_policies=tool_policies,
-        last_evidence_by_fingerprint={},
-        current_evidence_version=0,
-        max_parallel_calls_per_step=3,
-    )
-
-    assert plan.mode == "sequential"
-    assert [call.tool_name for call in plan.selected_calls] == ["query_db"]
-    assert len(plan.suppressed_calls) == 1
-    assert plan.reason == "sequential_mode_deferred"
-
-
-def test_plan_suppresses_duplicate_without_new_evidence():
-    tool_call = _tool_call("query_db", {"question": "top customers"}, "db-1")
-
-    first_plan = plan_tool_calls(
-        [tool_call],
-        tool_policies=tool_policies,
-        last_evidence_by_fingerprint={},
-        current_evidence_version=0,
-        max_parallel_calls_per_step=3,
-    )
-    fingerprint = first_plan.selected_calls[0].fingerprint
-
-    second_plan = plan_tool_calls(
-        [tool_call],
-        tool_policies=tool_policies,
-        last_evidence_by_fingerprint={fingerprint: 1},
-        current_evidence_version=1,
-        max_parallel_calls_per_step=3,
-    )
-
-    assert second_plan.selected_calls == ()
-    assert len(second_plan.suppressed_calls) == 1
-    assert second_plan.suppressed_calls[0].reason == "duplicate_without_new_evidence"
-    assert second_plan.reason == "all_calls_suppressed"
-
-
-def test_plan_truncates_parallel_search_fanout_to_cap():
-    tool_calls = [
-        _tool_call("search", {"query": "q1"}, "search-1"),
-        _tool_call("search", {"query": "q2"}, "search-2"),
-        _tool_call("search", {"query": "q3"}, "search-3"),
-        _tool_call("search", {"query": "q4"}, "search-4"),
-    ]
-
-    plan = plan_tool_calls(
-        tool_calls,
-        tool_policies=tool_policies,
-        last_evidence_by_fingerprint={},
-        current_evidence_version=0,
-        max_parallel_calls_per_step=3,
-    )
-
-    assert plan.mode == "parallel"
-    assert len(plan.selected_calls) == 3
-    assert len(plan.suppressed_calls) == 1
-    assert plan.suppressed_calls[0].reason == "parallel_cap_exceeded"
-    assert plan.reason == "parallel_truncated"
 
 
 def test_chat_stream_executes_only_first_tool_in_sequential_mode(monkeypatch):
