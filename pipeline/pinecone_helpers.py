@@ -4,6 +4,7 @@ import logging
 import os
 from clients import pinecone_client
 from pinecone import ServerlessSpec
+from observability.spans import retrieval_span
 
 logger = logging.getLogger("pipeline.pinecone")
 
@@ -83,38 +84,42 @@ def query_vectors(
 
     alpha=1.0 → pure dense, alpha=0.0 → pure sparse
     """
-    index = get_index()
-    ns = namespace_for_project(project_id)
+    with retrieval_span(span_name="retrieval.vector_query") as span:
+        index = get_index()
+        ns = namespace_for_project(project_id)
 
-    query_kwargs = {
-        "namespace": ns,
-        "top_k": top_k,
-        "include_metadata": True,
-    }
-
-    if sparse_vector and alpha < 1.0:
-        # Apply hybrid weighting
-        query_kwargs["vector"] = [v * alpha for v in dense_vector]
-        query_kwargs["sparse_vector"] = {
-            "indices": sparse_vector["indices"],
-            "values": [v * (1 - alpha) for v in sparse_vector["values"]],
+        query_kwargs = {
+            "namespace": ns,
+            "top_k": top_k,
+            "include_metadata": True,
         }
-    else:
-        query_kwargs["vector"] = dense_vector
 
-    results = index.query(**query_kwargs)
+        if sparse_vector and alpha < 1.0:
+            # Apply hybrid weighting
+            query_kwargs["vector"] = [v * alpha for v in dense_vector]
+            query_kwargs["sparse_vector"] = {
+                "indices": sparse_vector["indices"],
+                "values": [v * (1 - alpha) for v in sparse_vector["values"]],
+            }
+        else:
+            query_kwargs["vector"] = dense_vector
 
-    return [
-        {
-            "id": match.id,
-            "score": match.score,
-            "text": match.metadata.get("text", ""),
-            "source": match.metadata.get("source", ""),
-            "page": match.metadata.get("page"),
-            "document_id": match.metadata.get("document_id", ""),
-        }
-        for match in results.matches
-    ]
+        results = index.query(**query_kwargs)
+
+        matches = [
+            {
+                "id": match.id,
+                "score": match.score,
+                "text": match.metadata.get("text", ""),
+                "source": match.metadata.get("source", ""),
+                "page": match.metadata.get("page"),
+                "document_id": match.metadata.get("document_id", ""),
+            }
+            for match in results.matches
+        ]
+        if span is not None:
+            span.set_attribute("vector.hits", len(matches))
+        return matches
 
 
 def delete_namespace(project_id: str) -> None:

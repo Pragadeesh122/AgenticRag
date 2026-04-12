@@ -20,6 +20,7 @@ from observability.metrics import (
     observe_summarization,
     observe_tool_budget_exhausted,
 )
+from observability.spans import chat_turn_span
 from services.chat_postprocess_service import (
     schedule_memory_persistence,
 )
@@ -169,6 +170,8 @@ def chat_stream(session_id: str, user_message: str):
         session_id=session_id,
         user_id=user_id,
     )
+    _span_ctx = chat_turn_span(span_name="chat.turn", chat_type="general")
+    _span_ctx.__enter__()
     try:
         observe_agent_route(
             selected_agent="orchestrator",
@@ -388,6 +391,7 @@ def chat_stream(session_id: str, user_message: str):
             json.dumps({"tools_used": tools_used, "prompt_tokens": prompt_tokens}),
         )
     finally:
+        _span_ctx.__exit__(None, None, None)
         pop_context(context_tokens)
 
 

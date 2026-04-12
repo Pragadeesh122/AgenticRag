@@ -8,6 +8,7 @@ from agents.base import Agent
 from llm.response_utils import extract_first_text
 from observability.context import set_agent_name
 from observability.metrics import observe_agent_route
+from observability.spans import agent_route_span as _agent_route_span, classify_intent_span
 
 logger = logging.getLogger("agents.router")
 
@@ -30,57 +31,66 @@ Respond with ONLY the agent name (one word). Default to "reasoning" if unclear.\
 
 def classify_intent(messages: list[dict]) -> tuple[str, str]:
     """Classify intent from the full conversation."""
-    try:
-        classification_messages = [{"role": "system", "content": CLASSIFICATION_PROMPT}]
+    with classify_intent_span():
+        try:
+            classification_messages = [{"role": "system", "content": CLASSIFICATION_PROMPT}]
 
-        # Pass the full conversation (skip system prompt)
-        for msg in messages:
-            if msg["role"] in ("user", "assistant"):
-                classification_messages.append({
-                    "role": msg["role"],
-                    "content": msg["content"][:300],
-                })
+            # Pass the full conversation (skip system prompt)
+            for msg in messages:
+                if msg["role"] in ("user", "assistant"):
+                    classification_messages.append({
+                        "role": msg["role"],
+                        "content": msg["content"][:300],
+                    })
 
-        response = llm_client.chat.completions.create(
-            messages=classification_messages,
-            max_completion_tokens=10,
-            temperature=0,
-        )
-        agent_name = extract_first_text(response, "").strip().lower()
+            response = llm_client.chat.completions.create(
+                messages=classification_messages,
+                max_completion_tokens=10,
+                temperature=0,
+            )
+            agent_name = extract_first_text(response, "").strip().lower()
 
-        if agent_name in AGENTS:
-            logger.info(f"classified intent → {agent_name}")
-            return agent_name, "success"
+            if agent_name in AGENTS:
+                logger.info(f"classified intent → {agent_name}")
+                return agent_name, "success"
 
-        logger.warning(f"unknown agent '{agent_name}', falling back to reasoning")
-        return "reasoning", "fallback"
+            logger.warning(f"unknown agent '{agent_name}', falling back to reasoning")
+            return "reasoning", "fallback"
 
-    except Exception as e:
-        logger.error(f"intent classification failed: {e}")
-        return "reasoning", "error"
+        except Exception as e:
+            logger.error(f"intent classification failed: {e}")
+            return "reasoning", "error"
 
 
 def route(user_message: str, agent_name: str | None, messages: list[dict]) -> Agent:
     """Route to an agent — explicit name or auto-classify from conversation."""
     started = time.perf_counter()
     if agent_name and agent_name != "auto" and agent_name in AGENTS:
-        observe_agent_route(
-            selected_agent=agent_name,
-            route_mode="explicit",
-            status="success",
-            duration_seconds=time.perf_counter() - started,
-        )
-        set_agent_name(agent_name)
-        return AGENTS[agent_name]
+        with _agent_route_span(route_mode="explicit") as span:
+            observe_agent_route(
+                selected_agent=agent_name,
+                route_mode="explicit",
+                status="success",
+                duration_seconds=time.perf_counter() - started,
+            )
+            if span is not None:
+                span.set_attribute("selected_agent", agent_name)
+                span.set_attribute("status", "success")
+            set_agent_name(agent_name)
+            return AGENTS[agent_name]
 
     # Auto: classify from full conversation + new message
-    classify_msgs = messages + [{"role": "user", "content": user_message}]
-    classified, status = classify_intent(classify_msgs)
-    observe_agent_route(
-        selected_agent=classified,
-        route_mode="auto",
-        status=status,
-        duration_seconds=time.perf_counter() - started,
-    )
-    set_agent_name(classified)
-    return AGENTS[classified]
+    with _agent_route_span(route_mode="auto") as span:
+        classify_msgs = messages + [{"role": "user", "content": user_message}]
+        classified, status = classify_intent(classify_msgs)
+        observe_agent_route(
+            selected_agent=classified,
+            route_mode="auto",
+            status=status,
+            duration_seconds=time.perf_counter() - started,
+        )
+        if span is not None:
+            span.set_attribute("selected_agent", classified)
+            span.set_attribute("status", status)
+        set_agent_name(classified)
+        return AGENTS[classified]

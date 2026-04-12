@@ -9,6 +9,7 @@ import struct
 from memory.redis_client import redis_client
 from clients import llm_client
 from llm.response_utils import extract_first_embedding
+from observability.spans import retrieval_span
 
 logger = logging.getLogger("pipeline.retrieval_cache")
 
@@ -77,40 +78,52 @@ def _ensure_index(embedding_dim: int):
 
 def get_cached_retrieval(project_id: str, query: str) -> list[dict] | None:
     """Check if a similar query for this project has cached retrieval results."""
-    query_embedding, embedding_dim = _embed(query)
-    _ensure_index(embedding_dim)
+    with retrieval_span(span_name="retrieval.cache_lookup") as span:
+        query_embedding, embedding_dim = _embed(query)
+        _ensure_index(embedding_dim)
 
-    from redis.commands.search.query import Query
+        from redis.commands.search.query import Query
 
-    project_id_filter = _escape_tag_value(project_id)
-    q = (
-        Query(
-            f"(@project_id:{{{project_id_filter}}})=>[KNN 1 @embedding $vec AS score]"
+        project_id_filter = _escape_tag_value(project_id)
+        q = (
+            Query(
+                f"(@project_id:{{{project_id_filter}}})=>[KNN 1 @embedding $vec AS score]"
+            )
+            .sort_by("score")
+            .return_fields("results", "score")
+            .dialect(2)
         )
-        .sort_by("score")
-        .return_fields("results", "score")
-        .dialect(2)
-    )
 
-    try:
-        search_results = redis_client.ft(INDEX_NAME).search(
-            q, query_params={"vec": query_embedding}
-        )
-    except Exception as e:
-        logger.warning(f"retrieval cache search failed: {e}")
+        try:
+            search_results = redis_client.ft(INDEX_NAME).search(
+                q, query_params={"vec": query_embedding}
+            )
+        except Exception as e:
+            logger.warning(f"retrieval cache search failed: {e}")
+            if span is not None:
+                span.set_attribute("cache.hit", False)
+            return None
+
+        if search_results.total == 0:
+            if span is not None:
+                span.set_attribute("cache.hit", False)
+            return None
+
+        doc = search_results.docs[0]
+        similarity = 1 - float(doc.score)
+
+        if span is not None:
+            span.set_attribute("similarity", similarity)
+
+        if similarity >= SIMILARITY_THRESHOLD:
+            logger.info(f"retrieval cache hit: project={project_id}, similarity={similarity:.3f}")
+            if span is not None:
+                span.set_attribute("cache.hit", True)
+            return json.loads(doc.results)
+
+        if span is not None:
+            span.set_attribute("cache.hit", False)
         return None
-
-    if search_results.total == 0:
-        return None
-
-    doc = search_results.docs[0]
-    similarity = 1 - float(doc.score)
-
-    if similarity >= SIMILARITY_THRESHOLD:
-        logger.info(f"retrieval cache hit: project={project_id}, similarity={similarity:.3f}")
-        return json.loads(doc.results)
-
-    return None
 
 
 def cache_retrieval(project_id: str, query: str, results: list[dict], ttl: int = DEFAULT_TTL):

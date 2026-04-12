@@ -12,6 +12,11 @@ from observability.metrics import (
     observe_llm_output_speed,
     observe_llm_ttft,
 )
+from observability.spans import (
+    llm_completion_span,
+    record_llm_usage,
+    record_ttft_event,
+)
 
 try:
     from litellm import token_counter
@@ -146,6 +151,13 @@ class _ChatCompletionsFacade:
             call_kwargs["stream_options"] = {"include_usage": True}
 
         started = time.perf_counter()
+        span_ctx = llm_completion_span(
+            provider=provider_name,
+            model=resolved_model,
+            stream=stream,
+            operation="completion",
+        )
+        span = span_ctx.__enter__()
         try:
             response = resolved.provider.chat_completion(
                 model=resolved_model,
@@ -162,6 +174,8 @@ class _ChatCompletionsFacade:
                 status="error",
                 duration_seconds=time.perf_counter() - started,
             )
+            record_llm_usage(span, usage=None, cost_usd=None, status="error")
+            span_ctx.__exit__(None, None, None)
             raise
 
         if not stream:
@@ -197,6 +211,8 @@ class _ChatCompletionsFacade:
                 usage=usage,
                 cost_usd=cost_usd,
             )
+            record_llm_usage(span, usage=usage, cost_usd=cost_usd, status=status)
+            span_ctx.__exit__(None, None, None)
             return response
 
         return self._instrument_stream(
@@ -208,6 +224,8 @@ class _ChatCompletionsFacade:
             messages=messages,
             tools=call_kwargs.get("tools"),
             tool_choice=call_kwargs.get("tool_choice"),
+            span=span,
+            span_ctx=span_ctx,
         )
 
     def _instrument_stream(
@@ -221,6 +239,8 @@ class _ChatCompletionsFacade:
         messages: list[dict],
         tools: Any | None = None,
         tool_choice: Any | None = None,
+        span: Any = None,
+        span_ctx: Any = None,
     ):
         def _generator():
             usage = None
@@ -237,6 +257,7 @@ class _ChatCompletionsFacade:
                     if not ttft_emitted and delta_content:
                         ttft = ended_at - started
                         observe_llm_ttft(provider=provider, model=model, seconds=ttft)
+                        record_ttft_event(span, ttft_seconds=ttft)
                         first_token_at = ended_at
                         ttft_emitted = True
 
@@ -254,7 +275,11 @@ class _ChatCompletionsFacade:
                     status="error",
                     duration_seconds=time.perf_counter() - started,
                 )
+                record_llm_usage(span, usage=None, cost_usd=None, status="error")
                 raise
+            finally:
+                if span_ctx is not None:
+                    span_ctx.__exit__(None, None, None)
 
             status = "success" if usage is not None else "usage_missing"
             if usage is None:
@@ -288,6 +313,7 @@ class _ChatCompletionsFacade:
                 usage=usage,
                 cost_usd=cost_usd,
             )
+            record_llm_usage(span, usage=usage, cost_usd=cost_usd, status=status)
 
             if usage is not None and first_token_at is not None:
                 completion_tokens = int(_field(usage, "completion_tokens", 0) or 0)
@@ -322,46 +348,54 @@ class _EmbeddingFacade:
         provider_name = resolved.provider.name
         resolved_model = resolved.model
         started = time.perf_counter()
-        try:
-            response = resolved.provider.embedding(
-                model=resolved_model,
-                input=input,
-                **kwargs,
+        with llm_completion_span(
+            provider=provider_name,
+            model=resolved_model,
+            stream=False,
+            operation="embedding",
+        ) as span:
+            try:
+                response = resolved.provider.embedding(
+                    model=resolved_model,
+                    input=input,
+                    **kwargs,
+                )
+            except Exception:
+                observe_llm_outcome(
+                    operation="embedding",
+                    provider=provider_name,
+                    model=resolved_model,
+                    stream=False,
+                    status="error",
+                    duration_seconds=time.perf_counter() - started,
+                )
+                record_llm_usage(span, usage=None, cost_usd=None, status="error")
+                raise
+
+            usage = _extract_usage(response)
+            status = "success" if usage is not None else "usage_missing"
+            cost_usd = (
+                estimate_cost_usd(
+                    provider=provider_name,
+                    model=resolved_model,
+                    usage=usage,
+                    operation="embedding",
+                )
+                if usage is not None
+                else None
             )
-        except Exception:
             observe_llm_outcome(
                 operation="embedding",
                 provider=provider_name,
                 model=resolved_model,
                 stream=False,
-                status="error",
+                status=status,
                 duration_seconds=time.perf_counter() - started,
-            )
-            raise
-
-        usage = _extract_usage(response)
-        status = "success" if usage is not None else "usage_missing"
-        cost_usd = (
-            estimate_cost_usd(
-                provider=provider_name,
-                model=resolved_model,
                 usage=usage,
-                operation="embedding",
+                cost_usd=cost_usd,
             )
-            if usage is not None
-            else None
-        )
-        observe_llm_outcome(
-            operation="embedding",
-            provider=provider_name,
-            model=resolved_model,
-            stream=False,
-            status=status,
-            duration_seconds=time.perf_counter() - started,
-            usage=usage,
-            cost_usd=cost_usd,
-        )
-        return response
+            record_llm_usage(span, usage=usage, cost_usd=cost_usd, status=status)
+            return response
 
 
 class LLMClient:

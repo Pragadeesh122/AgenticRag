@@ -11,6 +11,7 @@ from prompts.project_chat import build_context_block
 from agents.router import route as route_agent
 from observability.context import pop_context, push_context
 from observability.metrics import observe_retrieval_results, observe_summarization
+from observability.spans import chat_turn_span
 from services.chat_postprocess_service import (
     schedule_memory_persistence,
 )
@@ -37,6 +38,8 @@ def project_chat_stream(
         session_id=session_id,
         project_id=project_id,
     )
+    _span_ctx = chat_turn_span(span_name="project_chat.turn", chat_type="project")
+    _span_ctx.__enter__()
     try:
         messages = get_messages(session_id)
 
@@ -134,6 +137,7 @@ def project_chat_stream(
             }),
         )
     finally:
+        _span_ctx.__exit__(None, None, None)
         pop_context(context_tokens)
 
 

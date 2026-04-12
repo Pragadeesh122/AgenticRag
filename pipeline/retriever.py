@@ -4,6 +4,7 @@ import logging
 from pipeline.embedder import embed_query_dense, embed_query_sparse
 from pipeline.pinecone_helpers import query_vectors
 from pipeline.retrieval_cache import get_cached_retrieval, cache_retrieval
+from observability.spans import retrieval_span
 
 logger = logging.getLogger("pipeline.retriever")
 
@@ -42,53 +43,71 @@ def retrieve(
     Returns:
         list of {"id", "score", "text", "source", "page", "document_id"}
     """
-    # Check retrieval cache first
-    cached = get_cached_retrieval(project_id, query)
-    if cached is not None:
+    with retrieval_span(
+        span_name="retrieval.pipeline",
+        **{"retrieval.top_k": top_k, "retrieval.alpha": alpha},
+    ) as span:
+        # Check retrieval cache first
+        cached = get_cached_retrieval(project_id, query)
+        if cached is not None:
+            logger.info(
+                f"using cached retrieval for project '{project_id}' ({len(cached)} results)"
+            )
+            if span is not None:
+                span.set_attribute("cache.hit", True)
+                span.set_attribute("result_count", len(cached))
+            return cached
+
+        config = get_retrieval_config(chunk_count)
+
+        if top_k is not None:
+            config["top_k"] = top_k
+        if alpha is not None:
+            config["alpha"] = alpha
+
+        if span is not None:
+            span.set_attribute("cache.hit", False)
+            span.set_attribute("retrieval.mode", "hybrid" if config["alpha"] < 1.0 else "dense")
+            span.set_attribute("retrieval.top_k", config["top_k"])
+            span.set_attribute("retrieval.alpha", config["alpha"])
+            span.set_attribute("retrieval.rerank", config["rerank"])
+
         logger.info(
-            f"using cached retrieval for project '{project_id}' ({len(cached)} results)"
+            f"retrieving from project '{project_id}' | "
+            f"alpha={config['alpha']}, top_k={config['top_k']}, "
+            f"rerank={config['rerank']}"
         )
-        return cached
 
-    config = get_retrieval_config(chunk_count)
+        # Generate embeddings
+        dense_vec = embed_query_dense(query)
 
-    if top_k is not None:
-        config["top_k"] = top_k
-    if alpha is not None:
-        config["alpha"] = alpha
+        sparse_vec = None
+        if config["alpha"] < 1.0:
+            sparse_vec = embed_query_sparse(query)
 
-    logger.info(
-        f"retrieving from project '{project_id}' | "
-        f"alpha={config['alpha']}, top_k={config['top_k']}, "
-        f"rerank={config['rerank']}"
-    )
+        # Query Pinecone
+        results = query_vectors(
+            project_id=project_id,
+            dense_vector=dense_vec,
+            sparse_vector=sparse_vec,
+            top_k=config["top_k"],
+            alpha=config["alpha"],
+        )
 
-    # Generate embeddings
-    dense_vec = embed_query_dense(query)
+        # If reranking is enabled, take more results and rerank
+        if config["rerank"] and len(results) > 10:
+            with retrieval_span(span_name="retrieval.rerank"):
+                results = _rerank(query, results, final_k=10)
 
-    sparse_vec = None
-    if config["alpha"] < 1.0:
-        sparse_vec = embed_query_sparse(query)
+        # Cache the results
+        if results:
+            cache_retrieval(project_id, query, results)
 
-    # Query Pinecone
-    results = query_vectors(
-        project_id=project_id,
-        dense_vector=dense_vec,
-        sparse_vector=sparse_vec,
-        top_k=config["top_k"],
-        alpha=config["alpha"],
-    )
+        if span is not None:
+            span.set_attribute("result_count", len(results))
 
-    # If reranking is enabled, take more results and rerank
-    if config["rerank"] and len(results) > 10:
-        results = _rerank(query, results, final_k=10)
-
-    # Cache the results
-    if results:
-        cache_retrieval(project_id, query, results)
-
-    logger.info(f"retrieved {len(results)} results")
-    return results
+        logger.info(f"retrieved {len(results)} results")
+        return results
 
 
 def _rerank(query: str, results: list[dict], final_k: int = 10) -> list[dict]:
