@@ -5,7 +5,9 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from api.auth.manager import current_active_user
-from api.server import _RATE_LIMIT_FALLBACK, app
+import api.rate_limit as _rl
+from api.rate_limit import _RATE_LIMIT_FALLBACK
+from api.server import app
 from database.core import get_db
 from database.models import Base, User
 
@@ -48,6 +50,7 @@ async def async_client(session_factory, test_user):
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[current_active_user] = lambda: test_user
     _RATE_LIMIT_FALLBACK.clear()
+    _rl._lua_script = None  # reset cached Lua script between tests
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -55,3 +58,4 @@ async def async_client(session_factory, test_user):
 
     app.dependency_overrides.clear()
     _RATE_LIMIT_FALLBACK.clear()
+    _rl._lua_script = None

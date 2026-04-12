@@ -19,3 +19,10 @@ datasources:
       # into "newest slice only" behavior.
       maxLines: 2000
     editable: true
+
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: true

@@ -4,6 +4,7 @@ import uuid
 import pytest
 
 from api import server as server_module
+from api import rate_limit as rate_limit_module
 from database.models import ChatSession, User
 
 
@@ -131,12 +132,13 @@ async def test_rate_limit_triggers_on_chat_stream(async_client, monkeypatch):
         "chat_stream",
         lambda *_: iter(["event: done\ndata: {\"prompt_tokens\": 0}\n\n"]),
     )
+    test_id = uuid.uuid4().hex[:8]
     monkeypatch.setattr(
-        server_module,
+        rate_limit_module,
         "RATE_LIMIT_RULES",
         (
             {
-                "name": "chat_stream_test",
+                "name": f"chat_stream_test_{test_id}",
                 "method": "POST",
                 "pattern": re.compile(r"^/chat/stream$"),
                 "limit": 2,
@@ -144,7 +146,7 @@ async def test_rate_limit_triggers_on_chat_stream(async_client, monkeypatch):
             },
         ),
     )
-    server_module._RATE_LIMIT_FALLBACK.clear()
+    rate_limit_module._RATE_LIMIT_FALLBACK.clear()
 
     first = await async_client.post(
         "/chat/stream",

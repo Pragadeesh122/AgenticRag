@@ -96,6 +96,8 @@ services:
       MINIO_SECURE: "false"
       FRONTEND_URL: http://localhost:3000
       DOCUMENT_INGEST_MODE: worker
+      OTEL_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
     command: >
       sh -c "uv run alembic upgrade head &&
              uv run uvicorn api.server:app --host 0.0.0.0 --port 8000 --reload"
@@ -127,6 +129,8 @@ services:
       MINIO_ENDPOINT: minio:9000
       MINIO_SECURE: "false"
       DOCUMENT_INGEST_MODE: worker
+      OTEL_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
     command: >
       sh -c "uv run alembic upgrade head &&
              uv run arq worker.WorkerSettings"
@@ -193,6 +197,16 @@ services:
       loki:
         condition: service_started
 
+  tempo:
+    image: grafana/tempo:2.6.1
+    command: -config.file=/etc/tempo/config.yml
+    volumes:
+      - ./monitoring/tempo/tempo-config.yml:/etc/tempo/config.yml:ro
+      - tempo_data:/var/tempo
+    ports:
+      - "127.0.0.1:4318:4318"   # OTLP HTTP receiver
+      - "127.0.0.1:3200:3200"   # Tempo query API
+
   grafana:
     image: grafana/grafana:11.1.5
     environment:
@@ -209,6 +223,8 @@ services:
         condition: service_started
       loki:
         condition: service_started
+      tempo:
+        condition: service_started
 
 volumes:
   postgres_data:
@@ -219,4 +235,5 @@ volumes:
   frontend_node_modules:
   prometheus_data:
   loki_data:
+  tempo_data:
   grafana_data:
