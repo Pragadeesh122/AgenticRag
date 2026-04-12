@@ -37,3 +37,6 @@ CLAUDE.md
 .playwright-mcp
 screenshots
 test-screenshots
+
+# Eval reports (generated)
+evals/reports/

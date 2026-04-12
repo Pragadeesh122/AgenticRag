@@ -1,0 +1,23 @@
+# RAG Evaluation Configuration
+
+# LLM judge settings
+judge:
+  model: "gpt-4o-mini"
+  temperature: 0
+  max_retries: 1
+
+# Retrieval metrics to compute
+retrieval_metrics:
+  k_values: [5, 10, 20]
+
+# Ingestion settings for eval documents
+ingestion:
+  chunk_size: 2000
+  chunk_overlap: 300
+
+# Eval run settings
+run:
+  # Poll interval (seconds) when waiting for Pinecone consistency
+  poll_interval: 2
+  # Max wait time (seconds) for vector upserts to become queryable
+  max_poll_wait: 60
