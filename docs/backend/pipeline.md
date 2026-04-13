@@ -137,7 +137,7 @@ If the reranker fails (API error, timeout), results fall back to score-based ord
 
 ### Retrieval Cache
 
-`pipeline/retrieval_cache.py` provides a Redis-backed cache keyed on `(project_id, query)`. Identical queries against the same project return cached results without hitting Pinecone. The cache is checked before embedding the query.
+`pipeline/retrieval_cache.py` provides a Redis-backed semantic cache scoped to a project. The query is embedded, compared against a Redis vector index for that project, and only treated as a hit when the similarity threshold is met. This means semantically similar queries can reuse retrieval results even when the raw query text is not identical.
 
 ## File Formats
 

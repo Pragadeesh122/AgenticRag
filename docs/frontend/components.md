@@ -15,21 +15,21 @@
       "type": "multiple_choice",
       "question": "What is...?",
       "options": ["A", "B", "C", "D"],
-      "correct_answer": "B",
+      "correct": "B",
       "explanation": "Because..."
     },
     {
       "id": 2,
       "type": "true_false",
       "question": "Is X true?",
-      "correct_answer": "True",
+      "correct": "True",
       "explanation": "..."
     },
     {
       "id": 3,
       "type": "short_answer",
       "question": "Explain...",
-      "correct_answer": "Key concept",
+      "correct": "Key concept",
       "explanation": "..."
     }
   ]
@@ -54,10 +54,8 @@ State shape per question:
 | Type | Component | Description |
 |------|-----------|-------------|
 | `mermaid` | `MermaidDiagram` | Flowcharts, sequence diagrams, mindmaps, gantt charts |
-| `bar`, `pie` | Built-in renderers | Simple chart visualizations |
-| `line` | `LineChart` | Multi-series line charts |
-| `radar` | `RadarChart` | Radar/spider charts |
-| `comparison_table` | `ComparisonTable` | Side-by-side data comparison tables |
+| `chart` | Built-in chart renderers | Numeric chart payloads using `chart_type` such as `bar`, `pie`, `line`, or `radar` |
+| `table` | `ComparisonTable` | Side-by-side comparison tables |
 
 ### Chart JSON Format
 
@@ -66,6 +64,22 @@ State shape per question:
   "type": "mermaid",
   "title": "System Architecture",
   "code": "graph LR\n  A-->B\n  B-->C"
+}
+```
+
+```json
+{
+  "type": "chart",
+  "chart_type": "line",
+  "title": "Revenue trend",
+  "x_key": "month",
+  "series": [
+    {"key": "revenue", "label": "Revenue"}
+  ],
+  "data": [
+    {"month": "Jan", "revenue": 120},
+    {"month": "Feb", "revenue": 145}
+  ]
 }
 ```
 
@@ -115,12 +129,12 @@ Entries are either:
 - **Text** — reasoning steps like "Searching the web for..." or "Found 5 results"
 - **Tool call** — tool name with status indicator (running spinner, done checkmark, error icon)
 
-During streaming, the block is expanded by default. After streaming completes, it collapses to a summary line showing the count and total duration. The user can expand it to review the steps.
+During streaming, the block is expanded by default. After streaming completes, it collapses to a summary line that reads `Reasoned` or `Reasoned for Xs`. The user can expand it to review the steps.
 
 ## Markdown Rendering
 
 Assistant text is rendered with [Streamdown](https://github.com/nichochar/streamdown), a streaming-optimized markdown renderer. Configuration:
 
 - **Syntax highlighting** via Shiki (themes: `github-light`, `github-dark`)
-- **Remediation** enabled for links, images, bold, italic, inline code, and KaTeX math
+- **`remend` recovery** enabled for links, images, bold, italic, inline code, and KaTeX math
 - Streaming-safe: handles incomplete markdown during token-by-token delivery

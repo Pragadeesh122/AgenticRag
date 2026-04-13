@@ -72,7 +72,7 @@ Set API keys for whichever providers you use:
 |----------|----------|
 | `OPENAI_API_KEY` | OpenAI |
 | `ANTHROPIC_API_KEY` | Anthropic |
-| `GOOGLE_API_KEY` | Google Gemini |
+| `GEMINI_API_KEY` | Google Gemini |
 | `XAI_API_KEY` | xAI / Grok |
 
 No provider env flags needed — model selection is name-driven. Pass model names directly (e.g. `gpt-4o-mini`, `claude-sonnet-4-20250514`, `gemini-2.0-flash`) or with explicit prefixes (`openai/gpt-4o-mini`). Defaults when omitted:
@@ -93,9 +93,10 @@ If you switch embedding models, ensure dimensions match:
 
 | Variable | Description |
 |----------|-------------|
-| `AUTH_SECRET` | JWT signing secret |
-| `GOOGLE_OAUTH_CLIENT_ID` | Google OAuth client ID |
-| `GOOGLE_OAUTH_CLIENT_SECRET` | Google OAuth client secret |
+| `SECRET_KEY` | JWT signing secret |
+| `AUTH_GOOGLE_ID` | Google OAuth client ID |
+| `AUTH_GOOGLE_SECRET` | Google OAuth client secret |
+| `FRONTEND_URL` | Frontend base URL used for OAuth callback redirects |
 
 ### Observability (optional)
 
@@ -104,7 +105,7 @@ If you switch embedding models, ensure dimensions match:
 | `OTEL_ENABLED` | `false` | Enable OpenTelemetry tracing |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | — | Tempo OTLP HTTP endpoint |
 | `OBSERVABILITY_HASH_SALT` | — | Salt for hashed identity labels |
-| `OBS_ENABLE_HIGH_CARDINALITY_METRICS` | `false` | Session-level token/spend counters |
+| `OBS_ENABLE_HIGH_CARDINALITY_METRICS` | `true` | Session-level token/spend counters |
 
 ### Ingestion
 

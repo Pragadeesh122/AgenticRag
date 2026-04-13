@@ -26,7 +26,7 @@ Health checks ensure services start in the correct order:
 - **postgres** — `pg_isready` check every 5s
 - **redis** — `redis-cli ping` every 5s
 - **minio** — TCP check on port 9000
-- **minio-setup** — must complete (creates bucket + CORS config) before API starts
+- **minio-setup** — must complete (creates bucket and attempts CORS config) before API starts
 
 ### Secrets
 
@@ -43,7 +43,9 @@ Both the API and worker run `uv run alembic upgrade head` on startup. The first 
 The `minio-setup` init container:
 1. Waits for MinIO to accept connections
 2. Creates the `agenticrag-documents` bucket
-3. Applies CORS configuration from `minio/cors.xml`
+3. Tries to apply CORS configuration from `minio/cors.xml`
+
+Some MinIO builds return `NotImplemented` for bucket CORS. In that case the setup container logs the failure and continues so the rest of the stack can still start.
 
 ### Volumes
 
@@ -76,7 +78,7 @@ The API exposes both standard HTTP metrics and custom AgenticRAG metrics (LLM, t
 
 ### Loki + Promtail
 
-Promtail scrapes Docker container logs via the Docker socket and ships them to Loki. All application logging uses structured JSON to stdout.
+Promtail scrapes Docker container logs via the Docker socket and ships them to Loki. The app currently writes plain container stdout/stderr logs rather than structured JSON.
 
 Config files:
 - `monitoring/promtail/promtail-config.yml`
@@ -95,7 +97,7 @@ Grafana is pre-provisioned with:
 - **Dashboards** — Economics, Agentic Ops, UX & Latency
 - **Alert rules** — pre-configured rules (contact points must be set manually)
 
-Default login: `admin`/`admin` (configurable via `GRAFANA_ADMIN_USER`/`GRAFANA_ADMIN_PASSWORD`).
+Default login on a fresh Grafana volume: `admin`/`admin` (configurable via `GRAFANA_ADMIN_USER`/`GRAFANA_ADMIN_PASSWORD`). If the `grafana_data` volume already exists, Grafana keeps the previously stored admin password instead of reapplying the env defaults.
 
 ## Rebuild
 

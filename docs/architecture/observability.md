@@ -6,7 +6,7 @@
 flowchart LR
     API[FastAPI + Worker] -->|custom metrics| Prometheus
     API -->|OTLP HTTP| Tempo
-    API -->|structured JSON stdout| Promtail
+    API -->|container stdout/stderr| Promtail
     Promtail --> Loki
     Prometheus --> Grafana
     Loki --> Grafana
@@ -17,7 +17,7 @@ flowchart LR
 |--------|------|-----------------|
 | **Metrics** | Prometheus | Request counts, latencies, token usage, LLM spend, tool execution, agent routing |
 | **Traces** | Tempo (via OpenTelemetry) | Per-request spans across LLM calls, tool execution, retrieval, ingestion |
-| **Logs** | Loki (via Promtail) | Structured JSON logs from all Docker containers |
+| **Logs** | Loki (via Promtail) | Container logs scraped from all Docker services |
 | **Dashboards** | Grafana | Three pre-provisioned dashboards + alert rules |
 
 ## Prometheus Metrics

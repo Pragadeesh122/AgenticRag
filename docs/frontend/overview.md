@@ -2,7 +2,7 @@
 
 ## Stack
 
-- **Next.js 15** — App Router with React Server Components
+- **Next.js 16** — App Router with React Server Components
 - **React 19** — with `useState`/`useEffect` for state management (no global store)
 - **TypeScript** — strict mode
 - **Tailwind CSS v4** — utility-first styling
@@ -12,11 +12,13 @@
 
 | Path | Component | Description |
 |------|-----------|-------------|
-| `/` | `LandingPage` | Marketing page (unauthenticated) or redirect to `/chat` |
+| `/` | `LandingPage` | Marketing landing page |
 | `/chat` | `ChatPage` | General chat with tools |
 | `/auth/signin` | Sign-in page | Email/password + Google OAuth |
+| `/auth/forgot-password` | Forgot password page | Recovery request flow |
+| `/auth/reset-password` | Reset password page | Recovery completion flow |
 | `/projects/[id]` | `ProjectPage` | Project chat with document upload and agent selection |
-| `/settings` | Settings page | User memory management, password change |
+| `/settings` | Settings page | Account security, password change, password recovery |
 
 ## Component Tree
 
@@ -36,8 +38,7 @@ RootLayout (fonts, Providers)
 │       │   └── Streamdown (markdown rendering)
 │       └── ChatInput (textarea + submit)
 └── ProjectPage (dark theme)
-    ├── ProjectSidebar (session list)
-    ├── DocumentsPanel (upload, status, delete)
+    ├── ProjectSidebar (documents, upload, search, sessions)
     └── ChatArea (same as above + agent selector + sources)
 ```
 
@@ -45,17 +46,20 @@ RootLayout (fonts, Providers)
 
 Cookie-based JWT authentication via FastAPI-Users:
 
-1. The `AuthProvider` component wraps the app and manages auth state
-2. On page load, it calls `GET /users/me` to check authentication
-3. If unauthenticated, the landing page is shown
+1. `proxy.ts` guards protected routes like `/chat`, `/projects/*`, and `/settings`
+2. Protected route pages fetch their initial data on the Next.js server via `lib/server-api.ts`
+3. The `AuthProvider` still manages browser-side auth state after hydration
 4. Login sets an `httponly` cookie (`app_token`) — no tokens in localStorage
-5. All API calls include `credentials: "include"` to send the cookie
+5. All browser API calls include `credentials: "include"` to send the cookie
 
 Google OAuth redirects through `/auth/google/authorize` → Google → `/api/auth/callback/google`.
 
 ## API Communication
 
-The frontend talks **directly** to the FastAPI backend for everything — there are no Next.js API routes or server-side proxies.
+The frontend uses a hybrid access pattern:
+
+- **Browser-side interactive calls** go directly to FastAPI through `lib/api.ts`
+- **Initial protected page loads** fetch from FastAPI on the Next.js server through `lib/server-api.ts`
 
 `apiFetch()` in `lib/api.ts` strips the `/api` prefix from paths and sends requests to the backend URL (`NEXT_PUBLIC_API_URL`):
 
@@ -65,7 +69,7 @@ apiFetch("/api/chat/sessions", ...)       → FastAPI: /chat/sessions
 apiFetch("/auth/login", ...)              → FastAPI: POST /auth/login
 ```
 
-Auth cookies (`httponly`, `samesite=lax`) are sent via `credentials: "include"` on every request. SSE streams are read directly from the FastAPI response.
+On the SSR path, the Next.js server forwards the incoming cookie to FastAPI using `INTERNAL_API_URL` when running inside Docker. SSE streams are still read directly from the FastAPI response in the browser.
 
 All persistence (sessions, messages, projects) is handled by SQLAlchemy in the backend — no ORM or database access in the frontend.
 
@@ -74,7 +78,7 @@ All persistence (sessions, messages, projects) is handled by SQLAlchemy in the b
 No global state library. Each page component manages its own state:
 
 - **`ChatPage`** — sessions list, active session, messages, streaming state
-- **`ProjectPage`** — same, plus documents list, selected agent, retrieval sources
+- **`ProjectPage`** — same, plus documents list, selected agent, retrieval sources, and retrieval-only project search results
 
 Session switching, message sending, and streaming are all coordinated through React state in the page component, passed down as props.
 

@@ -35,7 +35,7 @@ Active conversation state stored in Redis with a 24-hour TTL.
 |-----|-------|---------|
 | `session:<id>` | JSON array of messages | Full conversation including system prompt, user messages, assistant responses, and tool results |
 | `session:<id>:user` | User ID string | Ownership binding — every endpoint checks this before granting access |
-| `session:<id>:agent` | Agent name string | Currently selected agent (project chat only) |
+| `session:<id>:agent` | Agent name string | Optional helper key for project-agent tracking |
 
 Messages are read and written on every chat turn. Redis provides the sub-millisecond latency needed during the streaming loop where each step reads the full history, calls the LLM, and writes back.
 
@@ -131,4 +131,4 @@ Users can view and edit their memory directly via the API:
 - `GET /chat/memory` — returns all four categories from PostgreSQL
 - `PUT /chat/memory` — updates a single category in both Redis and PostgreSQL
 
-The frontend exposes this through a settings page where users can review and correct what the system has learned about them.
+The frontend exposes this through the memory panel in the chat UI, where users can review and correct what the system has learned about them.

@@ -3,15 +3,17 @@
 An agentic RAG chat application that combines document-grounded retrieval with autonomous tool use. Upload documents to a project and chat with them using specialized AI agents, or use the general chat with web search, database queries, and headless browsing.
 
 ```
-Browser  <-->  Next.js (frontend, static client)
+Browser  <-->  Next.js (SSR + client UI)
+   |                |
+   |                └──────>  FastAPI (server-side data fetch for protected routes)
    |
-   └──────>  FastAPI (Python backend)
-                  |
-             PostgreSQL (users, sessions, messages, projects)
-             Redis (sessions, cache, memory, jobs)
-             Pinecone (vectors)
-             MinIO (file storage)
-             LLM providers (OpenAI, Anthropic, Gemini, Grok, Ollama)
+   └───────────────────────>  FastAPI (browser API calls + SSE)
+                               |
+                          PostgreSQL (users, sessions, messages, projects)
+                          Redis (sessions, cache, memory, jobs)
+                          Pinecone (vectors)
+                          MinIO (file storage)
+                          LLM providers (OpenAI, Anthropic, Gemini, Grok, Ollama)
 ```
 
 ## Documentation

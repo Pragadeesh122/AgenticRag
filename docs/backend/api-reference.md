@@ -11,7 +11,7 @@ FastAPI-Users with cookie-based JWT. The auth cookie (`app_token`) is set as `ht
 | POST | `/auth/login` | No | Email/password login, sets JWT cookie |
 | POST | `/auth/logout` | Yes | Clears JWT cookie |
 | POST | `/auth/register` | No | Create account with email/password |
-| POST | `/auth/forgot-password` | No | Send password reset email |
+| POST | `/auth/forgot-password` | No | Request a password reset token |
 | POST | `/auth/reset-password` | No | Reset password with token |
 | POST | `/auth/verify` | No | Verify email with token |
 | GET | `/auth/google/authorize` | No | Start Google OAuth flow |
@@ -19,6 +19,10 @@ FastAPI-Users with cookie-based JWT. The auth cookie (`app_token`) is set as `ht
 | POST | `/auth/change-password` | Yes | Change password (email/password accounts only) |
 | GET | `/users/me` | Yes | Get current user |
 | PATCH | `/users/me` | Yes | Update current user |
+
+Current local-development behavior:
+- password reset and verification tokens are logged by the backend
+- no email delivery service is wired in this repo by default
 
 ## Chat
 
@@ -60,6 +64,21 @@ FastAPI-Users with cookie-based JWT. The auth cookie (`app_token`) is set as `ht
 ```
 
 **Response:** Server-Sent Events stream. See [Streaming](../frontend/streaming.md) for event types.
+
+### Persisted Chat History
+
+These endpoints manage durable chat sessions and messages stored in PostgreSQL.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/chat/sessions` | Yes | List general chat sessions |
+| POST | `/chat/sessions` | Yes | Create a general chat session row |
+| PATCH | `/chat/sessions/{id}` | Yes | Update title or backend session ID |
+| DELETE | `/chat/sessions/{id}` | Yes | Delete a general chat session row |
+| GET | `/chat/sessions/{id}/messages` | Yes | Load persisted messages for a session |
+| POST | `/chat/sessions/{id}/messages` | Yes | Persist streamed user + assistant messages |
+| GET | `/chat/sessions/{id}/export` | Yes | Export the session as Markdown |
+| PATCH | `/chat/messages/{id}` | Yes | Update message metadata (quiz state, agent name, parts) |
 
 ### Memory
 
@@ -104,10 +123,10 @@ Three-step presigned URL flow:
 | POST | `/projects/{id}/upload` | Yes | Init: create document record + presigned URL |
 | PUT | `/projects/{id}/upload` | Yes | Confirm: trigger ingestion |
 | GET | `/projects/{id}/documents` | Yes | List project documents |
-| DELETE | `/projects/{id}/documents/{docId}` | Yes | Delete a document |
-| GET | `/projects/{id}/documents/{docId}/status` | Yes | Poll ingestion status |
-| GET | `/projects/{id}/documents/{docId}/download` | Yes | Get presigned download URL |
-| PATCH | `/projects/{id}/documents/{docId}/reingest` | Yes | Re-upload and re-ingest a document |
+| DELETE | `/projects/{id}/documents/{doc_id}` | Yes | Delete a document |
+| GET | `/projects/{id}/documents/{doc_id}/status` | Yes | Poll ingestion status |
+| GET | `/projects/{id}/documents/{doc_id}/download` | Yes | Get presigned download URL |
+| PATCH | `/projects/{id}/documents/{doc_id}/reingest` | Yes | Re-upload and re-ingest a document |
 
 **POST `/projects/{id}/upload`** request:
 ```json
@@ -142,7 +161,7 @@ Supported file types: `pdf`, `txt`, `md`, `csv`, `docx`
 |--------|------|------|-------------|
 | POST | `/projects/{id}/chat` | Yes | SSE stream for project chat |
 | POST | `/projects/{id}/session` | Yes | Create project chat session |
-| DELETE | `/projects/{id}/session/{sessionId}` | Yes | Delete project chat session |
+| DELETE | `/projects/{id}/session/{session_id}` | Yes | Delete project chat session |
 | GET | `/projects/{id}/sessions` | Yes | List project chat sessions |
 
 **POST `/projects/{id}/chat`** request:

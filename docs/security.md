@@ -18,9 +18,10 @@ Authentication uses FastAPI-Users with a `jwt_cookie` backend. The JWT is stored
 
 ### Auth Methods
 
-- **Email/password** — standard registration with hashed passwords (FastAPI-Users default: bcrypt via `passlib`)
+- **Email/password** — standard registration with FastAPI-Users `PasswordHelper` hashing (Argon2 with bcrypt fallback)
 - **Google OAuth** — via `httpx-oauth`, `associate_by_email=True` links to existing accounts by email
 - **Password change** — verifies current password before allowing change, rejects OAuth-only accounts
+- **Password reset / verify** — the current backend generates tokens, but in local development those tokens are logged server-side instead of being sent by a mail provider
 
 ### Session Ownership
 
@@ -86,13 +87,25 @@ Every rate-limited response includes:
 On 429 (Too Many Requests):
 - `Retry-After` — seconds until the window resets
 
-## Database Isolation
+## Database Access Boundary
 
-The SQL query tool (`query_db`) runs LLM-generated SQL against the **app database**, not the auth database. The connection uses a read-only PostgreSQL user created by `database/setup-reader.sh`. This ensures:
+The SQL query tool (`query_db`) runs against the same PostgreSQL instance that stores auth, chat, project, and memory tables. Its protection today is:
 
-- LLM-generated queries cannot modify data (read-only user)
-- Auth data (passwords, sessions, OAuth tokens) is in a separate database entirely
-- A prompt injection through the SQL tool cannot access sensitive user data
+- a dedicated read-only PostgreSQL user created by `database/setup-reader.sh`
+- `readonly=True` at execution time
+- server-side validation that only allows a single read-only `SELECT` query
+
+What this does guarantee:
+
+- LLM-generated queries cannot modify data
+- multi-statement writes and obvious destructive SQL are blocked before execution
+
+What it does **not** guarantee today:
+
+- full database isolation between auth tables and application tables
+- table-level access control narrower than "all readable tables in the public schema"
+
+So the current posture is read-only safety, not hard data-domain isolation.
 
 ## CORS
 

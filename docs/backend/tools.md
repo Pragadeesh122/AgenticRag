@@ -32,11 +32,11 @@ No manual registration — add a module with `SCHEMA` and a matching function.
 | Tool | Description | Cacheable | Execution mode |
 |------|-------------|-----------|---------------|
 | `search` | Web search via Brave Search API + LLM summarization | Yes | parallel_safe |
-| `query_db` | Natural language → SQL → PostgreSQL (read-only user) | No | sequential |
-| `browser_task` | Headless browser for interactive web pages | No | sequential |
-| `crawl_website` | Extract and read web page content via Crawl4AI | No | sequential |
-| `query_local_kb` | Search local FAISS knowledge base | Yes | parallel_safe |
-| `portfolio` | Portfolio-specific queries | Yes | parallel_safe |
+| `query_db` | Natural language → SQL → PostgreSQL (read-only user) | Yes | sequential_first |
+| `browser_task` | Headless browser for interactive web pages | No | sequential_first |
+| `crawl_website` | Extract and read web page content via Crawl4AI | No | sequential_first |
+| `query_local_kb` | Search local FAISS knowledge base | Yes | sequential_first |
+| `portfolio` | Portfolio-specific queries | Yes | sequential_first |
 
 ## Tool Schema Format
 
@@ -102,7 +102,7 @@ The `current_evidence_version` counter increments after each tool result. If a f
 
 ### Parallel vs Sequential
 
-The planner checks if all candidates in a batch are `parallel_safe` with `requires_fresh_input=False`. If so, they run concurrently (up to `max_parallel_calls_per_step`). Otherwise, only the first candidate runs.
+The planner is intentionally conservative. In practice, only distinct `search` fan-out calls run in parallel in v1. Mixed batches and sequential-first tools fall back to executing only the first candidate, then the orchestrator asks the model again with the new result.
 
 ## Tool Router
 
@@ -149,9 +149,9 @@ CACHEABLE = True
 
 # Optional: execution policy
 POLICY = {
-    "execution_mode": "parallel_safe",
-    "max_parallel_instances": 3,
-    "requires_fresh_input": False,
+    "execution_mode": "sequential_first",
+    "max_parallel_instances": 1,
+    "requires_fresh_input": True,
     "dedupe_key_fields": ("query",),
 }
 

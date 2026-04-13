@@ -2,12 +2,13 @@
 
 ## Architecture
 
-AgenticRAG is a Next.js frontend that talks directly to a FastAPI backend. All business logic, authentication, and persistence live in the Python backend — the frontend is a pure client.
+AgenticRAG uses a hybrid Next.js frontend and a FastAPI backend. The browser still talks directly to FastAPI for interactive API calls and SSE streams, but protected route loads now fetch their initial data on the Next.js server before hydrating into client components.
 
 ```mermaid
 graph LR
-    Browser -->|HTTP / SSE| FastAPI["FastAPI :8000<br/>Python Backend"]
-    Browser -->|static assets| NextJS["Next.js :3000<br/>Frontend (client only)"]
+    Browser -->|page requests| NextJS["Next.js :3000<br/>SSR + Client UI"]
+    Browser -->|interactive HTTP / SSE| FastAPI["FastAPI :8000<br/>Python Backend"]
+    NextJS -->|SSR data fetch| FastAPI
 
     FastAPI --- DB[("PostgreSQL<br/>users, sessions,<br/>messages, projects")]
     FastAPI --- Redis[("Redis<br/>sessions, cache,<br/>memory, jobs")]
@@ -31,14 +32,27 @@ graph LR
 
 ## Frontend–Backend Communication
 
-The frontend talks **directly** to FastAPI for everything — there are no Next.js API routes or server-side proxies. The `apiFetch()` function in `lib/api.ts` strips the `/api` prefix from paths and sends requests to the backend URL (`NEXT_PUBLIC_API_URL`):
+There are two active communication paths:
+
+1. **Browser-side interactive calls** go directly to FastAPI. The `apiFetch()` function in `lib/api.ts` strips the `/api` prefix from paths and sends requests to the backend URL (`NEXT_PUBLIC_API_URL`).
+2. **Protected route SSR loads** use `frontend/lib/server-api.ts`, which forwards the incoming auth cookie from Next.js to FastAPI so `/chat` and `/projects/[id]` can render with initial data on the server.
+
+Browser-side examples:
 
 ```
 Frontend: apiFetch("/api/chat/stream", ...) → FastAPI: POST /chat/stream
 Frontend: apiFetch("/auth/login", ...)      → FastAPI: POST /auth/login
 ```
 
-Auth cookies (`httponly`, `samesite=lax`) are sent via `credentials: "include"` on every request. SSE streams are read directly from the FastAPI response.
+SSR examples:
+
+```
+Next.js server: fetch /chat/sessions      → FastAPI: GET /chat/sessions
+Next.js server: fetch /projects/{id}      → FastAPI: GET /projects/{id}
+Next.js server: fetch /projects/{id}/sessions → FastAPI: GET /projects/{id}/sessions
+```
+
+Auth cookies (`httponly`, `samesite=lax`) are sent via `credentials: "include"` on browser requests and explicitly forwarded on SSR fetches. SSE streams are still read directly from the FastAPI response in the browser.
 
 ## Why Two Processes?
 
@@ -46,7 +60,7 @@ Auth cookies (`httponly`, `samesite=lax`) are sent via `credentials: "include"` 
 
 2. **Independent scaling.** The API and ingestion worker can scale separately from the frontend. The worker (`arq`) processes document ingestion jobs off a Redis queue without blocking the API server.
 
-3. **Separation of concerns.** The frontend is purely a client — it renders UI and sends requests. All auth, persistence, orchestration, and tool execution happen server-side in Python.
+3. **Separation of concerns.** The frontend handles page rendering, SSR hydration, and interactive UI state. Auth, persistence, orchestration, retrieval, and tool execution still live in Python.
 
 ## PostgreSQL
 
@@ -57,7 +71,7 @@ A single PostgreSQL instance stores everything, managed by SQLAlchemy + Alembic:
 - **Projects** — `Project`, `Document` tables
 - **User memory** — `UserMemory` table
 
-The `query_db` tool (general chat) connects to this same database but through a **read-only user** created by `database/setup-reader.sh`. This prevents LLM-generated SQL from modifying data or accessing sensitive columns — the read-only user only has `SELECT` privileges on specific tables.
+The `query_db` tool (general chat) connects to this same database through a **read-only user** created by `database/setup-reader.sh`. This prevents LLM-generated SQL from modifying data, but it is not a hard domain-isolation boundary because the reader currently has `SELECT` access across the `public` schema.
 
 ## Redis Roles
 
@@ -147,7 +161,8 @@ sequenceDiagram
 ```
 
 Key details:
-- The browser talks **directly** to FastAPI — there are no Next.js API routes or server-side proxies
+- Browser-side API calls and SSE still talk directly to FastAPI
+- Protected route loads use Next.js server-side fetches before the page hydrates
 - Messages are saved to Redis (working memory) during the chat turn, then to PostgreSQL (persistent history) after the stream completes
 - User memory is extracted asynchronously via an ARQ worker after each turn
 - The frontend generates local IDs during streaming, then replaces them with database IDs after the POST returns

@@ -10,7 +10,7 @@ docker compose up
 
 This starts the frontend on [localhost:3000](http://localhost:3000), the API on [localhost:8000](http://localhost:8000), and all supporting services (PostgreSQL, Redis, MinIO, Prometheus, Grafana, Loki, Tempo).
 
-See `.env.example` for required environment variables.
+Create a root `.env` file and use [Getting Started](docs/getting-started.md) for the required environment variables.
 
 ## Documentation
 
