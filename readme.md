@@ -1,71 +1,25 @@
 # AgenticRAG
 
-Run the full local stack with Docker Compose:
+An agentic RAG chat application that combines document-grounded retrieval with autonomous tool use. Upload documents to a project and chat with them using specialized AI agents, or use the general chat with web search, database queries, and headless browsing. Built with FastAPI, Next.js, Pinecone, and Redis.
+
+## Quick Start
 
 ```bash
 docker compose up
 ```
 
-Rebuild only when dependencies or Dockerfiles change:
+This starts the frontend on [localhost:3000](http://localhost:3000), the API on [localhost:8000](http://localhost:8000), and all supporting services (PostgreSQL, Redis, MinIO, Prometheus, Grafana, Loki, Tempo).
 
-```bash
-docker compose up --build
-```
+See `.env.example` for required environment variables.
 
-This starts:
+## Documentation
 
-- `frontend` on `http://localhost:3000`
-- `api` on `http://localhost:8000`
-- `worker` for document ingestion jobs
-- `postgres` on `localhost:5432`
-- `redis` on `localhost:6379`
-- `redisinsight` on `http://localhost:8001`
-- `minio` on `http://localhost:9000`
-- MinIO console on `http://localhost:9001`
-- `prometheus` on `http://localhost:9090`
-- `loki` on `http://localhost:3100`
-- `grafana` on `http://localhost:3001`
+Full documentation lives in [`docs/`](docs/index.md):
 
-Stop everything with:
-
-```bash
-docker compose down
-```
-
-Reset local state with:
-
-```bash
-docker compose down -v
-```
-
-Notes:
-
-- The compose file reads secrets and API keys from the root `.env`.
-- `.env` is excluded from the Docker build context so secrets are not baked into images.
-- LLM selection is model-driven (no required provider env flags):
-  - Pass model names directly to calls (`gpt-4o-mini`, `claude-...`, `gemini-...`, `grok-...`).
-  - You can also use explicit provider prefixes (`openai/gpt-4o-mini`, `anthropic/claude-...`).
-  - If model is omitted, fallback defaults are used:
-    - chat: `openai/gpt-5.4-mini`
-    - embeddings: `openai/text-embedding-3-large`
-- If you switch embedding models/providers, ensure vector dimensions match:
-  - `DENSE_EMBEDDING_DIMENSION` for Pinecone dense index
-  - `SMALL_EMBEDDING_DIMENSION` for Redis semantic caches
-- Document ingestion defaults to the ARQ worker through Redis. For a no-worker fallback, set `DOCUMENT_INGEST_MODE=background`.
-- Prometheus scrapes API metrics from `GET /metrics`.
-- Promtail ships Docker container logs to Loki.
-- Grafana datasources are pre-provisioned:
-  - Prometheus (`http://prometheus:9090`)
-  - Loki (`http://loki:3100`)
-- Grafana dashboards are provisioned from `monitoring/grafana/provisioning/dashboards`:
-  - `AgenticRAG - Economics`
-  - `AgenticRAG - Agentic Ops`
-  - `AgenticRAG - UX & Latency`
-- Grafana alert rules are provisioned from `monitoring/grafana/provisioning/alerting` (rules only; set contact points manually).
-- Observability env flags:
-  - `OBSERVABILITY_HASH_SALT` for stable hashed identity labels
-  - `OBS_ENABLE_HIGH_CARDINALITY_METRICS=true|false` to toggle session-level token/spend series
-- Recommended app logging format: structured JSON to stdout, shipped by Promtail into Loki.
-- If you run the backend outside Docker after changing Python dependencies, run:
-  - `uv sync`
-  - `uv run crawl4ai-setup`
+- [Getting Started](docs/getting-started.md) — setup, environment variables, local dev
+- [Architecture](docs/architecture/overview.md) — system design, chat modes, LLM layer, memory, observability
+- [Backend](docs/backend/api-reference.md) — API reference, agents, RAG pipeline, tools
+- [Frontend](docs/frontend/overview.md) — app structure, SSE streaming, components
+- [Security](docs/security.md) — rate limiting, auth, session ownership
+- [Deployment](docs/deployment.md) — production Docker, monitoring
+- [Contributing](docs/contributing.md) — how to add tools, agents, and LLM providers
