@@ -38,16 +38,16 @@ sequenceDiagram
     participant U as User
     participant R as React State
     participant S as SSE Stream
-    participant DB as PostgreSQL (Prisma)
+    participant F as FastAPI / PostgreSQL
 
     U->>R: 1. Generate local ID (Date.now()-random)
     R->>R: 2. Add user msg + assistant placeholder
     R->>S: 3. Start SSE stream
     S-->>R: token/tool/thinking events populate content
     S-->>R: done event
-    R->>DB: 4. POST both messages (returns DB CUIDs)
-    DB-->>R: 5. Replace local IDs with DB IDs
-    Note over R,DB: 6. Quiz/viz state changes PATCH metadata
+    R->>F: 4. POST both messages (returns DB CUIDs)
+    F-->>R: 5. Replace local IDs with DB IDs
+    Note over R,F: 6. Quiz/viz state changes PATCH metadata
 ```
 
 ### Step by step

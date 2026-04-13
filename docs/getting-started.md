@@ -142,17 +142,13 @@ yarn dev  # Next.js on :3000
 
 ### Database Setup
 
-The app uses two PostgreSQL databases:
+A single PostgreSQL instance stores everything, managed by SQLAlchemy + Alembic. Migrations run automatically on API startup, or manually with:
 
-1. **Auth database** — managed by Prisma in the frontend (`frontend/prisma/schema.prisma`). Run migrations with:
-   ```bash
-   cd frontend && npx prisma migrate dev
-   ```
+```bash
+uv run alembic upgrade head
+```
 
-2. **App database** — managed by Alembic in the backend. The `init.sql` and `setup-reader.sh` scripts create the schema and a read-only user for the SQL query tool. Migrations run automatically on API startup or manually with:
-   ```bash
-   uv run alembic upgrade head
-   ```
+The `database/setup-reader.sh` script creates a read-only PostgreSQL user for the SQL query tool (prevents LLM-generated SQL from modifying data).
 
 ## After Dependency Changes
 

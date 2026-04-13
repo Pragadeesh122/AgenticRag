@@ -2,19 +2,17 @@
 
 ## Architecture
 
-AgenticRAG runs as two servers behind a browser:
+AgenticRAG is a Next.js frontend that talks directly to a FastAPI backend. All business logic, authentication, and persistence live in the Python backend — the frontend is a pure client.
 
 ```mermaid
 graph LR
-    Browser -->|HTTP| NextJS["Next.js :3000<br/>Frontend + API Routes"]
-    NextJS -->|HTTP / SSE proxy| FastAPI["FastAPI :8000<br/>Python Backend"]
+    Browser -->|HTTP / SSE| FastAPI["FastAPI :8000<br/>Python Backend"]
+    Browser -->|static assets| NextJS["Next.js :3000<br/>Frontend (client only)"]
 
-    NextJS --- PrismaDB[("PostgreSQL<br/>(Prisma)<br/>auth, sessions,<br/>messages")]
-
+    FastAPI --- DB[("PostgreSQL<br/>users, sessions,<br/>messages, projects")]
     FastAPI --- Redis[("Redis<br/>sessions, cache,<br/>memory, jobs")]
     FastAPI --- Pinecone[("Pinecone<br/>vectors")]
     FastAPI --- MinIO[("MinIO<br/>file storage")]
-    FastAPI --- AppDB[("PostgreSQL<br/>app data")]
     FastAPI --- LLM["LLM Providers<br/>OpenAI, Anthropic,<br/>Gemini, Grok, Ollama"]
 
     subgraph Monitoring
@@ -31,26 +29,35 @@ graph LR
     Grafana --- Tempo
 ```
 
-## Why Two Servers?
+## Frontend–Backend Communication
 
-The frontend and backend are separate processes for three reasons:
+The frontend talks **directly** to FastAPI for everything — there are no Next.js API routes or server-side proxies. The `apiFetch()` function in `lib/api.ts` strips the `/api` prefix from paths and sends requests to the backend URL (`NEXT_PUBLIC_API_URL`):
 
-1. **Language ecosystems.** The RAG pipeline, agent orchestration, and tool execution depend on Python libraries (PyMuPDF, FAISS, Pinecone, LiteLLM, Crawl4AI). The frontend uses Next.js with React Server Components. Running both in one process isn't practical.
+```
+Frontend: apiFetch("/api/chat/stream", ...) → FastAPI: POST /chat/stream
+Frontend: apiFetch("/auth/login", ...)      → FastAPI: POST /auth/login
+```
 
-2. **Auth cookie isolation.** Next.js API routes handle the browser cookie layer (via Prisma/PostgreSQL) and proxy authenticated requests to FastAPI. The Python backend receives a trusted user ID — it never touches cookies or OAuth flows directly.
+Auth cookies (`httponly`, `samesite=lax`) are sent via `credentials: "include"` on every request. SSE streams are read directly from the FastAPI response.
 
-3. **Independent scaling.** The API and ingestion worker can scale separately from the frontend. The worker (`arq`) processes document ingestion jobs off a Redis queue without blocking the API server.
+## Why Two Processes?
 
-## Two PostgreSQL Instances
+1. **Language ecosystems.** The RAG pipeline, agent orchestration, and tool execution depend on Python libraries (PyMuPDF, FAISS, Pinecone, LiteLLM, Crawl4AI). The frontend uses Next.js with React. Running both in one process isn't practical.
 
-The system uses two separate PostgreSQL databases:
+2. **Independent scaling.** The API and ingestion worker can scale separately from the frontend. The worker (`arq`) processes document ingestion jobs off a Redis queue without blocking the API server.
 
-| Database | Managed by | Stores | Why separate |
-|----------|-----------|--------|--------------|
-| **Auth DB** | Prisma (Next.js) | Users, accounts, sessions, chat messages, projects, documents | Schema controlled by Prisma migrations. Holds all user-facing data. |
-| **App DB** | Alembic (Python) | Application tables queried by the SQL tool | Isolated so LLM-generated SQL queries from the `query_db` tool can never touch auth tables. The SQL tool connects via a read-only user. |
+3. **Separation of concerns.** The frontend is purely a client — it renders UI and sends requests. All auth, persistence, orchestration, and tool execution happen server-side in Python.
 
-The isolation is a security boundary: the general chat's database query tool runs arbitrary LLM-generated SQL against the app database. Keeping auth data in a separate database ensures a prompt injection attack through the SQL tool cannot access passwords, sessions, or OAuth tokens.
+## PostgreSQL
+
+A single PostgreSQL instance stores everything, managed by SQLAlchemy + Alembic:
+
+- **Users & auth** — `User`, `OAuthAccount` tables (FastAPI-Users)
+- **Chat data** — `ChatSession`, `ChatMessage` tables
+- **Projects** — `Project`, `Document` tables
+- **User memory** — `UserMemory` table
+
+The `query_db` tool (general chat) connects to this same database but through a **read-only user** created by `database/setup-reader.sh`. This prevents LLM-generated SQL from modifying data or accessing sensitive columns — the read-only user only has `SELECT` privileges on specific tables.
 
 ## Redis Roles
 
@@ -112,40 +119,36 @@ Here's what happens when a user sends a message in general chat:
 ```mermaid
 sequenceDiagram
     participant B as Browser
-    participant N as Next.js
     participant F as FastAPI
     participant R as Redis
+    participant PG as PostgreSQL
     participant L as LLM
     participant T as Tool
 
-    B->>N: POST /api/chat/stream
-    N->>F: POST /chat/stream (SSE proxy)
+    B->>F: POST /chat/stream (SSE)
     F->>R: Get session messages
     R-->>F: Message history
     F->>L: Chat completion (with tools)
     L-->>F: Streaming tokens + tool calls
-    F-->>N: SSE: token events
-    N-->>B: SSE: token events
+    F-->>B: SSE: token events
 
     alt Tool calls requested
         F->>T: Execute tool(s)
         T-->>F: Results
         F->>L: Chat completion (with tool results)
         L-->>F: Streaming tokens
-        F-->>N: SSE: token + thinking events
-        N-->>B: SSE: token + thinking events
+        F-->>B: SSE: token + thinking events
     end
 
     F->>R: Save updated messages
-    F-->>N: SSE: done event
-    N-->>B: SSE: done event
-    B->>N: POST /api/chat/sessions/:id/messages
-    N->>N: Save to PostgreSQL (Prisma)
+    F-->>B: SSE: done event
+    B->>F: POST /chat/sessions/{id}/messages
+    F->>PG: Save to PostgreSQL (SQLAlchemy)
 ```
 
 Key details:
-- Next.js API routes **proxy** the SSE stream — the browser never talks to FastAPI directly
-- Messages are saved to Redis (working memory) during the chat turn, then to PostgreSQL (persistent history) by the frontend after the stream completes
+- The browser talks **directly** to FastAPI — there are no Next.js API routes or server-side proxies
+- Messages are saved to Redis (working memory) during the chat turn, then to PostgreSQL (persistent history) after the stream completes
 - User memory is extracted asynchronously via an ARQ worker after each turn
 - The frontend generates local IDs during streaming, then replaces them with database IDs after the POST returns
 

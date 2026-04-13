@@ -55,26 +55,19 @@ Google OAuth redirects through `/auth/google/authorize` → Google → `/api/aut
 
 ## API Communication
 
-The frontend talks to two backends:
+The frontend talks **directly** to the FastAPI backend for everything — there are no Next.js API routes or server-side proxies.
 
-### Direct to FastAPI (Python)
+`apiFetch()` in `lib/api.ts` strips the `/api` prefix from paths and sends requests to the backend URL (`NEXT_PUBLIC_API_URL`):
 
-`apiFetch()` in `lib/api.ts` makes direct calls to the Python backend for:
-- Auth (login, register, OAuth)
-- Session management (create, restore, delete backend sessions)
-- Memory management (get, update)
-- Project CRUD
+```
+apiFetch("/api/chat/stream", ...)         → FastAPI: POST /chat/stream
+apiFetch("/api/chat/sessions", ...)       → FastAPI: /chat/sessions
+apiFetch("/auth/login", ...)              → FastAPI: POST /auth/login
+```
 
-### Through Next.js API Routes (proxy)
+Auth cookies (`httponly`, `samesite=lax`) are sent via `credentials: "include"` on every request. SSE streams are read directly from the FastAPI response.
 
-SSE streaming and Prisma-backed persistence go through Next.js API routes:
-- `/api/chat/stream` — proxies SSE to `POST /chat/stream` on FastAPI
-- `/api/chat/sessions` — CRUD on `ChatSession` via Prisma
-- `/api/chat/sessions/[id]/messages` — message persistence via Prisma
-- `/api/chat/messages/[id]` — metadata PATCH (quiz state, agent name)
-- `/api/projects/[id]/chat` — proxies SSE to `POST /projects/{id}/chat`
-
-Why proxy? The Next.js routes handle cookie forwarding and add the Prisma persistence layer. The browser never connects to FastAPI directly.
+All persistence (sessions, messages, projects) is handled by SQLAlchemy in the backend — no ORM or database access in the frontend.
 
 ## State Management
 

@@ -112,6 +112,6 @@ Both chat modes stream Server-Sent Events to the frontend:
 Both modes share the same session infrastructure:
 
 1. **Creation** — a 12-character hex session ID is generated. The system prompt (with user memory injected) and user ownership key are stored in Redis with a 24-hour TTL.
-2. **Messages** — stored as a JSON array in Redis during the conversation. Saved to PostgreSQL by the frontend after each turn.
+2. **Messages** — stored as a JSON array in Redis during the conversation. Saved to PostgreSQL (via SQLAlchemy) after each turn.
 3. **Restore** — when a user reopens a past session, messages are loaded from PostgreSQL and the Redis session is recreated with a fresh system prompt.
 4. **Memory extraction** — after each turn, an ARQ job is enqueued to extract and persist user memories from the conversation.

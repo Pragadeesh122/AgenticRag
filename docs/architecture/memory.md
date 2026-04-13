@@ -11,7 +11,7 @@ flowchart TD
         U["session:&lt;id&gt;:user — ownership binding"]
     end
 
-    subgraph Tier2["Tier 2: Persistent History (PostgreSQL via Prisma)"]
+    subgraph Tier2["Tier 2: Persistent History (PostgreSQL)"]
         CM["ChatMessage — every message ever sent"]
         CS["ChatSession — session metadata"]
     end
@@ -41,7 +41,7 @@ Messages are read and written on every chat turn. Redis provides the sub-millise
 
 ### Tier 2: Persistent History (PostgreSQL)
 
-After each streaming turn completes, the frontend saves both the user message and assistant response to PostgreSQL via Prisma. This is the durable record — if a Redis session expires, the conversation can be restored.
+After each streaming turn completes, both the user message and assistant response are saved to PostgreSQL via SQLAlchemy. This is the durable record — if a Redis session expires, the conversation can be restored.
 
 The `ChatMessage` model includes a `metadata` JSON column for client-side state like quiz answers and agent attribution. The `ChatSession` model links to a `backendSessionId` (the Redis key) and optionally to a `projectId`.
 

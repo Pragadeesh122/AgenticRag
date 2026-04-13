@@ -3,12 +3,15 @@
 An agentic RAG chat application that combines document-grounded retrieval with autonomous tool use. Upload documents to a project and chat with them using specialized AI agents, or use the general chat with web search, database queries, and headless browsing.
 
 ```
-Browser  <-->  Next.js (frontend + API routes)  <-->  FastAPI (Python backend)
-                      |                                      |
-                 PostgreSQL (Prisma)                    Redis (sessions)
-                 (auth, sessions, messages)             Pinecone (vectors)
-                                                       MinIO (file storage)
-                                                       PostgreSQL (app data)
+Browser  <-->  Next.js (frontend, static client)
+   |
+   └──────>  FastAPI (Python backend)
+                  |
+             PostgreSQL (users, sessions, messages, projects)
+             Redis (sessions, cache, memory, jobs)
+             Pinecone (vectors)
+             MinIO (file storage)
+             LLM providers (OpenAI, Anthropic, Gemini, Grok, Ollama)
 ```
 
 ## Documentation
@@ -23,7 +26,7 @@ Browser  <-->  Next.js (frontend + API routes)  <-->  FastAPI (Python backend)
 
 | Document | Description |
 |----------|-------------|
-| [System Overview](architecture/overview.md) | Two-server design, data flow, service topology |
+| [System Overview](architecture/overview.md) | System design, data flow, service topology |
 | [Chat Modes](architecture/chat-modes.md) | General orchestration loop vs project RAG pipeline |
 | [LLM Layer](architecture/llm-layer.md) | Provider abstraction, model routing, cost tracking |
 | [Memory](architecture/memory.md) | Redis working memory, Postgres history, user memory |
