@@ -2,7 +2,7 @@ name: agenticrag
 
 services:
   postgres:
-    image: postgres:17
+    image: pgvector/pgvector:pg17
     environment:
       POSTGRES_DB: ${DB_NAME:-agenticrag}
       POSTGRES_USER: ${DB_ADMIN_USER:-admin}
@@ -80,6 +80,35 @@ services:
       echo 'Skipping MinIO bucket CORS setup because this MinIO build returned NotImplemented.'
       "
 
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    env_file:
+      - .env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MINIO_ENDPOINT: minio:9000
+      MINIO_SECURE: "false"
+      DOCUMENT_INGEST_MODE: worker
+      OTEL_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
+    command: uv run alembic upgrade head
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+
   api:
     build:
       context: .
@@ -98,9 +127,7 @@ services:
       DOCUMENT_INGEST_MODE: worker
       OTEL_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
-    command: >
-      sh -c "uv run alembic upgrade head &&
-             uv run uvicorn api.server:app --host 0.0.0.0 --port 8000 --reload"
+    command: uv run uvicorn api.server:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - .:/app
     ports:
@@ -113,6 +140,8 @@ services:
       minio:
         condition: service_healthy
       minio-setup:
+        condition: service_completed_successfully
+      migrate:
         condition: service_completed_successfully
 
   worker:
@@ -131,9 +160,7 @@ services:
       DOCUMENT_INGEST_MODE: worker
       OTEL_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
-    command: >
-      sh -c "uv run alembic upgrade head &&
-             uv run arq worker.WorkerSettings"
+    command: uv run arq worker.WorkerSettings
     volumes:
       - .:/app
     depends_on:
@@ -144,6 +171,8 @@ services:
       minio:
         condition: service_healthy
       minio-setup:
+        condition: service_completed_successfully
+      migrate:
         condition: service_completed_successfully
 
   frontend:

@@ -23,7 +23,9 @@ from observability.metrics import (
 from observability.spans import chat_turn_span
 from services.chat_postprocess_service import (
     schedule_memory_persistence,
+    schedule_memory_summary_refresh,
 )
+from tasks.memory_tasks import invalidate_session_memory_cursor
 
 logger = logging.getLogger("api.chat")
 
@@ -380,11 +382,16 @@ def chat_stream(session_id: str, user_message: str):
             updated = summarize_messages(messages)
             messages.clear()
             messages.extend(updated)
+            # The cursor points at a message that was just collapsed into a
+            # summary; invalidate it so the next extraction re-processes the
+            # post-summary conversation instead of silently skipping.
+            invalidate_session_memory_cursor(session_id)
+            schedule_memory_summary_refresh(messages, session_id=session_id)
 
         save_messages(session_id, messages)
 
         if user_id:
-            schedule_memory_persistence(messages, user_id)
+            schedule_memory_persistence(messages, user_id, session_id=session_id)
 
         yield _sse(
             "done",
@@ -402,7 +409,8 @@ def end_session_with_memory(session_id: str) -> None:
         if not user_id:
             return
         messages = get_messages(session_id)
-        schedule_memory_persistence(messages, user_id)
+        schedule_memory_summary_refresh(messages, session_id=session_id)
+        schedule_memory_persistence(messages, user_id, session_id=session_id)
     except KeyError:
         pass
 

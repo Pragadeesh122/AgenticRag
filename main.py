@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functions.tool_router import execute_tool_call
 from utils.summarizer import summarize_messages
@@ -17,13 +18,14 @@ MAX_TOOL_CALLS = 3
 
 def main():
     print("Hello from agenticrag!")
+    user_id = os.getenv("LOCAL_USER_ID", "").strip()
 
     # Load semantic memory into system prompt
     system_prompt = ORCHESTRATOR
-    user_memory = get_user_memory()
+    user_memory = get_user_memory(user_id)
     if user_memory:
         system_prompt += f"\n\nKnown facts about the user:\n{user_memory}"
-        logger.info("loaded user memory from Redis")
+        logger.info("loaded user memory")
 
     messages = [{"role": "system", "content": system_prompt}]
 
@@ -32,8 +34,9 @@ def main():
 
         if content == "exit":
             # Extract and save memories before exiting
-            logger.info("extracting memories from conversation")
-            extract_and_save_memories(messages)
+            if user_id:
+                logger.info("extracting memories from conversation")
+                extract_and_save_memories(messages, user_id)
             with open("results.json", "w") as file:
                 json.dump(messages, file, indent=2)
             break

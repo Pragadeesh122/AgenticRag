@@ -14,7 +14,9 @@ from observability.metrics import observe_retrieval_results, observe_summarizati
 from observability.spans import chat_turn_span
 from services.chat_postprocess_service import (
     schedule_memory_persistence,
+    schedule_memory_summary_refresh,
 )
+from tasks.memory_tasks import invalidate_session_memory_cursor
 from llm.response_utils import usage_tokens
 
 logger = logging.getLogger("api.project_chat")
@@ -111,21 +113,30 @@ def project_chat_stream(
 
         # Summarize when prompt tokens are high, or fallback to message-count threshold
         # for providers/streams that may not return token usage consistently.
+        summarized = False
         if prompt_tokens > MAX_PROMPT_TOKENS:
             observe_summarization(reason="prompt_tokens")
             updated = summarize_messages(messages)
             messages.clear()
             messages.extend(updated)
+            summarized = True
         elif len(messages) > MAX_MESSAGES_BEFORE_SUMMARY:
             observe_summarization(reason="message_count")
             updated = summarize_messages(messages)
             messages.clear()
             messages.extend(updated)
+            summarized = True
+
+        if summarized:
+            # Cursor points at a message that was just collapsed — invalidate
+            # so the next extraction re-scans the post-summary conversation.
+            invalidate_session_memory_cursor(session_id)
+            schedule_memory_summary_refresh(messages, session_id=session_id)
 
         save_messages(session_id, messages)
 
         if user_id:
-            schedule_memory_persistence(messages, user_id)
+            schedule_memory_persistence(messages, user_id, session_id=session_id)
 
         yield _sse(
             "done",

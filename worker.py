@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 # Import Tasks
 from tasks.document_tasks import process_document_task
-from tasks.memory_tasks import persist_memories_task
+from tasks.memory_tasks import persist_memories_task, refresh_rolling_summary_task
 
 # Ensure environment is loaded
 load_dotenv()
@@ -18,7 +18,11 @@ WorkerSettings = type(
     (),
     {
         "redis_settings": RedisSettings(host=redis_host, port=redis_port),
-        "functions": [process_document_task, persist_memories_task],
+        "functions": [
+            process_document_task,
+            persist_memories_task,
+            refresh_rolling_summary_task,
+        ],
         "on_startup": None,
         "on_shutdown": None,
     }

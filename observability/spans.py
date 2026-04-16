@@ -164,3 +164,21 @@ def ingestion_span(*, span_name: str = "ingestion.document", **attrs):
         for k, v in attrs.items():
             _safe_set(span, k, v)
         yield span
+
+
+@contextmanager
+def memory_extraction_span(*, phase: str, **attrs):
+    """Span for the atomic memory extraction pipeline.
+
+    ``phase`` is one of: ``extract``, ``embed``, ``consolidate``, ``persist``, ``summary``.
+    """
+    tracer = get_tracer()
+    if tracer is None:
+        yield None
+        return
+    with tracer.start_as_current_span(f"memory.{phase}") as span:
+        _set_context_attributes(span)
+        span.set_attribute("memory.phase", phase)
+        for k, v in attrs.items():
+            _safe_set(span, k, v)
+        yield span

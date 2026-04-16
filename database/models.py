@@ -6,6 +6,7 @@ from sqlalchemy import String, Integer, ForeignKey, DateTime, Text, JSON, Boolea
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from fastapi_users.db import SQLAlchemyBaseOAuthAccountTableUUID
 from fastapi_users_db_sqlalchemy.generics import GUID
+from pgvector.sqlalchemy import Vector
 
 class Base(DeclarativeBase):
     pass
@@ -34,11 +35,15 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class UserMemory(Base):
+    """Deprecated — replaced by UserMemoryFact. Retained for backfill read path.
+
+    Will be dropped in a follow-up migration after 30 days of stable operation.
+    """
     __tablename__ = "user_memory"
-    
+
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"), unique=True)
-    
+
     work_context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     personal_context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     top_of_mind: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -46,8 +51,36 @@ class UserMemory(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     user: Mapped["User"] = relationship("User", back_populates="memory")
+
+
+class UserMemoryFact(Base):
+    """Atomic user memory fact. One row per fact. Superseded facts are kept
+    with ``superseded_at`` set, enabling temporal queries and audit history.
+    """
+    __tablename__ = "user_memory_fact"
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding: Mapped[list] = mapped_column(Vector(1536), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    superseded_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True, default=None
+    )
+    superseded_by: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True, default=None
+    )
+    source_session_id: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True, default=None
+    )
 
 class Project(Base):
     __tablename__ = "project"

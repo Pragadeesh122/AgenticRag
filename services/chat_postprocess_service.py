@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from typing import Optional
 
 from arq import create_pool
 from arq.connections import RedisSettings
@@ -21,12 +22,32 @@ def _normalize_memory_messages(messages: list[dict]) -> list[dict]:
     ]
 
 
-async def _enqueue_memory_persistence(messages: list[dict], user_id: str) -> None:
+async def _enqueue_memory_persistence(
+    messages: list[dict],
+    user_id: str,
+    session_id: Optional[str],
+) -> None:
     pool = await create_pool(RedisSettings(host=redis_host, port=redis_port))
-    await pool.enqueue_job("persist_memories_task", user_id, messages)
+    await pool.enqueue_job(
+        "persist_memories_task", user_id, messages, session_id
+    )
 
 
-def schedule_memory_persistence(messages: list[dict], user_id: str) -> None:
+async def _enqueue_memory_summary_refresh(
+    messages: list[dict],
+    session_id: str,
+) -> None:
+    pool = await create_pool(RedisSettings(host=redis_host, port=redis_port))
+    await pool.enqueue_job(
+        "refresh_rolling_summary_task", messages, session_id
+    )
+
+
+def schedule_memory_persistence(
+    messages: list[dict],
+    user_id: str,
+    session_id: Optional[str] = None,
+) -> None:
     normalized_messages = _normalize_memory_messages(messages)
     if not user_id or not normalized_messages:
         return
@@ -35,9 +56,37 @@ def schedule_memory_persistence(messages: list[dict], user_id: str) -> None:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         try:
-            asyncio.run(_enqueue_memory_persistence(normalized_messages, user_id))
+            asyncio.run(
+                _enqueue_memory_persistence(normalized_messages, user_id, session_id)
+            )
         except Exception as exc:
             logger.error(f"failed to enqueue memory persistence: {exc}")
         return
 
-    loop.create_task(_enqueue_memory_persistence(normalized_messages, user_id))
+    loop.create_task(
+        _enqueue_memory_persistence(normalized_messages, user_id, session_id)
+    )
+
+
+def schedule_memory_summary_refresh(
+    messages: list[dict],
+    session_id: Optional[str],
+) -> None:
+    normalized_messages = _normalize_memory_messages(messages)
+    if not session_id or not normalized_messages:
+        return
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        try:
+            asyncio.run(
+                _enqueue_memory_summary_refresh(normalized_messages, session_id)
+            )
+        except Exception as exc:
+            logger.error(f"failed to enqueue rolling summary refresh: {exc}")
+        return
+
+    loop.create_task(
+        _enqueue_memory_summary_refresh(normalized_messages, session_id)
+    )

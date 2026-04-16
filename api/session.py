@@ -23,7 +23,7 @@ def _build_system_prompt(user_id: str) -> str:
     user_memory = get_user_memory(user_id)
     if user_memory:
         system_prompt += f"\n\nKnown facts about the user:\n{user_memory}"
-        logger.info("loaded user memory from Redis")
+        logger.info("loaded user memory")
     return system_prompt
 
 
@@ -37,7 +37,7 @@ def _build_project_system_prompt(user_id: str = "", project_name: str = "") -> s
         user_memory = get_user_memory(user_id)
         if user_memory:
             system_prompt += f"\nKnown facts about the user:\n{user_memory}"
-            logger.info("loaded user memory from Redis")
+            logger.info("loaded user memory")
     return system_prompt
 
 
