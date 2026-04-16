@@ -1,5 +1,11 @@
 # API Reference
 
+## Related Backend Docs
+
+- [Agents](agents.md) — agent discovery, routing, and agent responsibilities
+- [RAG Pipeline](pipeline.md) — document ingestion, chunking, embeddings, retrieval
+- [Tools](tools.md) — tool schemas, execution model, planner integration, caching
+
 ## Authentication
 
 FastAPI-Users with cookie-based JWT. The auth cookie (`app_token`) is set as `httponly`, `secure`, `samesite=lax` with a 7-day lifetime.
@@ -218,3 +224,9 @@ Both `/chat/stream` and `/projects/{id}/chat` return SSE streams:
 Allowed origins: `http://localhost:3000`, `http://127.0.0.1:3000`, plus regex matching `https?://(localhost|127\.0\.0\.1)(:\d+)?`.
 
 Credentials are allowed (cookies).
+
+## See Also
+
+- [Agents](agents.md)
+- [RAG Pipeline](pipeline.md)
+- [Tools](tools.md)

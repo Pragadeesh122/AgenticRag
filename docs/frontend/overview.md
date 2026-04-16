@@ -1,5 +1,10 @@
 # Frontend Overview
 
+## Related Frontend Docs
+
+- [Streaming](streaming.md) — SSE event flow, message lifecycle, streaming state updates
+- [Components](components.md) — markdown rendering, quiz/chart/mermaid components, UI composition
+
 ## Stack
 
 - **Next.js 16** — App Router with React Server Components
@@ -105,3 +110,8 @@ Session switching, message sending, and streaming are all coordinated through Re
 | Hero | Animated mesh blobs (violet/indigo/cyan) with backdrop blur |
 | CTA | Solid black primary, gray ghost secondary |
 | Bento grid | White cards with `#e5e7eb` gap lines |
+
+## See Also
+
+- [Streaming](streaming.md)
+- [Components](components.md)

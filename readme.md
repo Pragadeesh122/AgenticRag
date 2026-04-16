@@ -23,3 +23,10 @@ Full documentation lives in [`docs/`](docs/index.md):
 - [Security](docs/security.md) — rate limiting, auth, session ownership
 - [Deployment](docs/deployment.md) — production Docker, monitoring
 - [Contributing](docs/contributing.md) — how to add tools, agents, and LLM providers
+
+Documentation hubs:
+
+- [Docs Index](docs/index.md) — full doc map
+- [Architecture Subsystem Guides](docs/architecture/overview.md) — links to chat modes, LLM layer, memory, and observability
+- [Backend Subsystem Guides](docs/backend/api-reference.md) — links to agents, RAG pipeline, and tools
+- [Frontend Subsystem Guides](docs/frontend/overview.md) — links to streaming and component docs

@@ -1,5 +1,12 @@
 # System Overview
 
+## Related Docs
+
+- [Chat Modes](chat-modes.md) — orchestration loop vs project chat flow
+- [LLM Layer](llm-layer.md) — provider abstraction, model selection, response normalization
+- [Memory](memory.md) — session state, atomic memory extraction, rolling summaries
+- [Observability](observability.md) — tracing, metrics, logs, dashboards
+
 ## Architecture
 
 AgenticRAG uses a hybrid Next.js frontend and a FastAPI backend. The browser still talks directly to FastAPI for interactive API calls and SSE streams, but protected route loads now fetch their initial data on the Next.js server before hydrating into client components.
@@ -128,6 +135,15 @@ The user uploads documents to a project, then chats with them. Instead of tools,
 4. **Streaming response** — the agent generates a response grounded in the retrieved context
 
 See [Chat Modes](chat-modes.md) for the full orchestration details.
+
+## Related Architecture Guides
+
+Use the subsystem guides for implementation details that do not belong in this overview:
+
+- [Chat Modes](chat-modes.md) for orchestration details, tool budgets, and project-agent routing
+- [LLM Layer](llm-layer.md) for provider setup, streaming behavior, and model abstraction
+- [Memory](memory.md) for the atomic memory pipeline, Redis cursor keys, and `user_memory_fact`
+- [Observability](observability.md) for tracing spans, Prometheus metrics, and Grafana/Tempo/Loki setup
 
 ## End-to-End Data Flow
 

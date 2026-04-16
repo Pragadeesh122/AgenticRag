@@ -59,3 +59,27 @@ Browser  <-->  Next.js (SSR + client UI)
 | [Deployment](deployment.md) | Production Docker setup, monitoring, migrations |
 | [Evaluation](evaluation.md) | Test suite, RAG eval harness, metrics |
 | [Contributing](contributing.md) | Adding tools, agents, and LLM providers |
+
+## Suggested Reading Paths
+
+### System Design
+
+1. [Getting Started](getting-started.md)
+2. [System Overview](architecture/overview.md)
+3. [Chat Modes](architecture/chat-modes.md)
+4. [LLM Layer](architecture/llm-layer.md)
+5. [Memory](architecture/memory.md)
+6. [Observability](architecture/observability.md)
+
+### Backend Development
+
+1. [API Reference](backend/api-reference.md)
+2. [Agents](backend/agents.md)
+3. [RAG Pipeline](backend/pipeline.md)
+4. [Tools](backend/tools.md)
+
+### Frontend Development
+
+1. [Frontend Overview](frontend/overview.md)
+2. [Streaming](frontend/streaming.md)
+3. [Components](frontend/components.md)
