@@ -2,6 +2,7 @@ import type {
   AssistantMessageStatus,
   Message,
   MessageMetadata,
+  MemoryFact,
   MessagePart,
   Project,
   ProjectDocument,
@@ -9,7 +10,6 @@ import type {
   Session,
   AgentInfo,
   UserMemory,
-  MemoryCategory,
   ProjectSearchResult,
 } from "./types";
 import {
@@ -637,25 +637,30 @@ export async function fetchAgents(): Promise<AgentInfo[]> {
 export async function fetchMemory(): Promise<UserMemory> {
   const res = await apiFetch("/api/chat/memory");
   if (!res.ok) {
-    return {
-      work_context: "",
-      personal_context: "",
-      top_of_mind: "",
-      preferences: "",
-    };
+    return {facts: []};
   }
   return res.json();
 }
 
-export async function updateMemoryCategory(
-  category: MemoryCategory,
-  content: string
-): Promise<void> {
-  await apiFetch("/api/chat/memory", {
-    method: "PUT",
+export async function addMemoryFact(text: string): Promise<MemoryFact> {
+  const res = await apiFetch("/api/chat/memory", {
+    method: "POST",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({category, content}),
+    body: JSON.stringify({text}),
   });
+  if (!res.ok) {
+    throw new Error("Failed to add memory");
+  }
+  return res.json();
+}
+
+export async function removeMemoryFact(factId: string): Promise<void> {
+  const res = await apiFetch(`/api/chat/memory/${factId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    throw new Error("Failed to remove memory");
+  }
 }
 
 // ─── Project Chat Stream ───

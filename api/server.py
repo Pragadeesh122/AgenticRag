@@ -1,7 +1,9 @@
 """FastAPI server exposing the orchestrator as an API."""
 
+import asyncio
 import logging
 import time
+from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Depends, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -17,9 +19,8 @@ from api.session import (
 )
 from api.chat import chat_stream
 from api.projects import router as projects_router
-from memory.semantic import _memory_key
-from memory.redis_client import redis_client
-from database.models import ChatSession, UserMemory, User
+from memory.semantic import _embed
+from database.models import ChatSession, User, UserMemoryFact
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from database.core import get_db
@@ -58,6 +59,19 @@ def _metrics_path(request: Request) -> str:
     if isinstance(path, str) and path:
         return path
     return request.url.path
+
+
+def _utc_now_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _serialize_memory_fact(fact: UserMemoryFact) -> dict:
+    return {
+        "id": fact.id,
+        "text": fact.text,
+        "observed_at": fact.observed_at.isoformat(),
+        "source_session_id": fact.source_session_id,
+    }
 
 
 @app.middleware("http")
@@ -158,9 +172,8 @@ class RestoreRequest(BaseModel):
     project_name: str | None = None
 
 
-class MemoryUpdateData(BaseModel):
-    category: str
-    content: str
+class MemoryFactCreate(BaseModel):
+    text: str
 
 
 class ChangePasswordData(BaseModel):
@@ -233,39 +246,68 @@ def remove_session(session_id: str, user: User = Depends(current_active_user)):
 
 @app.get("/chat/memory")
 async def get_chat_memory(user=Depends(current_active_user), db: AsyncSession = Depends(get_db)):
-    stmt = select(UserMemory).where(UserMemory.user_id == user.id)
-    memory = (await db.execute(stmt)).scalar_one_or_none()
-    if not memory:
-        return {"work_context": "", "personal_context": "", "top_of_mind": "", "preferences": ""}
-    return {
-        "work_context": memory.work_context or "",
-        "personal_context": memory.personal_context or "",
-        "top_of_mind": memory.top_of_mind or "",
-        "preferences": memory.preferences or ""
-    }
+    stmt = (
+        select(UserMemoryFact)
+        .where(
+            UserMemoryFact.user_id == user.id,
+            UserMemoryFact.superseded_at.is_(None),
+        )
+        .order_by(UserMemoryFact.observed_at.desc(), UserMemoryFact.id.desc())
+    )
+    facts = (await db.execute(stmt)).scalars().all()
+    return {"facts": [_serialize_memory_fact(fact) for fact in facts]}
 
 
-@app.put("/chat/memory")
-async def update_chat_memory(data: MemoryUpdateData, user=Depends(current_active_user), db: AsyncSession = Depends(get_db)):
-    stmt = select(UserMemory).where(UserMemory.user_id == user.id)
-    memory = (await db.execute(stmt)).scalar_one_or_none()
-    if not memory:
-        # Create
-        memory = UserMemory(user_id=user.id)
-        db.add(memory)
-    
-    cat = data.category
-    # Map TS camelCase or snake_case if necessary, assume snake given frontend types usually sync.
-    if hasattr(memory, cat):
-        setattr(memory, cat, data.content)
-        await db.commit()
-        # Also sync to Redis
-        key = _memory_key(str(user.id))
-        if data.content.strip():
-            redis_client.hset(key, cat, data.content.strip())
-        else:
-            redis_client.hdel(key, cat)
-            
+@app.post("/chat/memory")
+async def create_chat_memory_fact(
+    data: MemoryFactCreate,
+    user=Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    text = data.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Memory text cannot be empty")
+
+    existing_stmt = select(UserMemoryFact).where(
+        UserMemoryFact.user_id == user.id,
+        UserMemoryFact.text == text,
+        UserMemoryFact.superseded_at.is_(None),
+    )
+    existing = (await db.execute(existing_stmt)).scalar_one_or_none()
+    if existing:
+        return _serialize_memory_fact(existing)
+
+    embedding = await asyncio.to_thread(_embed, text)
+    fact = UserMemoryFact(
+        user_id=user.id,
+        text=text,
+        embedding=embedding,
+        observed_at=_utc_now_naive(),
+        source_session_id="manual-memory",
+    )
+    db.add(fact)
+    await db.commit()
+    await db.refresh(fact)
+    return _serialize_memory_fact(fact)
+
+
+@app.delete("/chat/memory/{fact_id}")
+async def delete_chat_memory_fact(
+    fact_id: str,
+    user=Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(UserMemoryFact).where(
+        UserMemoryFact.id == fact_id,
+        UserMemoryFact.user_id == user.id,
+        UserMemoryFact.superseded_at.is_(None),
+    )
+    fact = (await db.execute(stmt)).scalar_one_or_none()
+    if not fact:
+        raise HTTPException(status_code=404, detail="Memory fact not found")
+
+    fact.superseded_at = _utc_now_naive()
+    await db.commit()
     return {"status": "ok"}
 
 

@@ -1,57 +1,52 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { X } from "@phosphor-icons/react/dist/ssr/X";
-import { FloppyDisk } from "@phosphor-icons/react/dist/ssr/FloppyDisk";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Brain } from "@phosphor-icons/react/dist/ssr/Brain";
-import { fetchMemory, updateMemoryCategory } from "@/lib/api";
-import type { UserMemory, MemoryCategory } from "@/lib/types";
-
-const CATEGORIES: { key: MemoryCategory; label: string; description: string }[] = [
-  {
-    key: "work_context",
-    label: "Work Context",
-    description: "Job title, employer, team, tech stack, work projects",
-  },
-  {
-    key: "personal_context",
-    label: "Personal Context",
-    description: "Name, location, education, languages, hobbies",
-  },
-  {
-    key: "top_of_mind",
-    label: "Top of Mind",
-    description: "Long-running projects or learning goals",
-  },
-  {
-    key: "preferences",
-    label: "Preferences",
-    description: "Code style, workflow, communication preferences",
-  },
-];
+import { Plus } from "@phosphor-icons/react/dist/ssr/Plus";
+import { Trash } from "@phosphor-icons/react/dist/ssr/Trash";
+import { X } from "@phosphor-icons/react/dist/ssr/X";
+import { addMemoryFact, fetchMemory, removeMemoryFact } from "@/lib/api";
+import type { MemoryFact } from "@/lib/types";
 
 interface MemoryPanelProps {
   open: boolean;
   onClose: () => void;
 }
 
-export default function MemoryPanel({ open, onClose }: MemoryPanelProps) {
-  const [memory, setMemory] = useState<UserMemory>({
-    work_context: "",
-    personal_context: "",
-    top_of_mind: "",
-    preferences: "",
+function formatObservedAt(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
   });
-  const [draft, setDraft] = useState<UserMemory>({ ...memory });
+}
+
+function sourceLabel(sourceSessionId: string | null): string {
+  if (sourceSessionId === "manual-memory") {
+    return "Manual";
+  }
+  if (sourceSessionId === "backfill-from-redis") {
+    return "Backfill";
+  }
+  return "Extracted";
+}
+
+export default function MemoryPanel({ open, onClose }: MemoryPanelProps) {
+  const [facts, setFacts] = useState<MemoryFact[]>([]);
+  const [newFact, setNewFact] = useState("");
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState<MemoryCategory | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const data = await fetchMemory();
-      setMemory(data);
-      setDraft(data);
+      setFacts(data.facts);
     } catch {
       // silently fail
     } finally {
@@ -60,27 +55,50 @@ export default function MemoryPanel({ open, onClose }: MemoryPanelProps) {
   }, []);
 
   useEffect(() => {
-    if (open) load();
+    if (open) {
+      load();
+    }
   }, [open, load]);
 
-  const handleSave = async (category: MemoryCategory) => {
-    setSaving(category);
+  const trimmedNewFact = newFact.trim();
+  const canAdd = trimmedNewFact.length > 0 && !submitting;
+
+  const handleAdd = async () => {
+    if (!canAdd) {
+      return;
+    }
+    setSubmitting(true);
     try {
-      await updateMemoryCategory(category, draft[category]);
-      setMemory((prev) => ({ ...prev, [category]: draft[category] }));
+      const created = await addMemoryFact(trimmedNewFact);
+      setFacts((prev) => {
+        const withoutDuplicate = prev.filter((fact) => fact.id !== created.id);
+        return [created, ...withoutDuplicate];
+      });
+      setNewFact("");
     } finally {
-      setSaving(null);
+      setSubmitting(false);
     }
   };
 
-  const isDirty = (category: MemoryCategory) =>
-    draft[category] !== memory[category];
+  const handleRemove = async (factId: string) => {
+    setRemovingId(factId);
+    try {
+      await removeMemoryFact(factId);
+      setFacts((prev) => prev.filter((fact) => fact.id !== factId));
+    } finally {
+      setRemovingId(null);
+    }
+  };
 
-  const totalEntries = CATEGORIES.filter((c) => memory[c.key].trim()).length;
+  const totalFacts = facts.length;
+  const emptyState = useMemo(
+    () =>
+      "No atomic memories stored yet. As you chat, durable facts about your projects, preferences, and background will show up here.",
+    []
+  );
 
   return (
     <>
-      {/* Backdrop */}
       {open && (
         <div
           className="fixed inset-0 z-40 bg-black/40"
@@ -89,7 +107,6 @@ export default function MemoryPanel({ open, onClose }: MemoryPanelProps) {
         />
       )}
 
-      {/* Panel */}
       <div
         className={`fixed top-0 right-0 z-50 h-full w-full max-w-md flex flex-col transition-transform duration-200 ease-in-out ${
           open ? "translate-x-0" : "translate-x-full"
@@ -102,13 +119,12 @@ export default function MemoryPanel({ open, onClose }: MemoryPanelProps) {
         aria-label="Memory panel"
         aria-hidden={!open}
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 shrink-0 border-b border-white/6">
           <div className="flex items-center gap-2.5">
             <Brain size={18} weight="duotone" className="text-emerald-400" />
             <h2 className="text-sm font-semibold text-zinc-100">Memory</h2>
             <span className="text-[11px] text-zinc-500 font-medium">
-              {totalEntries} / {CATEGORIES.length} active
+              {totalFacts} active facts
             </span>
           </div>
           <button
@@ -120,82 +136,108 @@ export default function MemoryPanel({ open, onClose }: MemoryPanelProps) {
           </button>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+        <div className="px-5 py-4 shrink-0 border-b border-white/6">
+          <div className="mb-2">
+            <h3 className="text-xs font-semibold text-zinc-300 tracking-wide">
+              Add Memory
+            </h3>
+            <p className="text-[11px] text-zinc-600 mt-0.5">
+              Add one atomic fact the AI should remember. Keep it to a single durable fact.
+            </p>
+          </div>
+          <textarea
+            value={newFact}
+            onChange={(e) => setNewFact(e.target.value)}
+            placeholder="Example: Prefers concise explanations"
+            rows={3}
+            className="w-full text-[13px] leading-relaxed text-zinc-300 placeholder-zinc-600 rounded-lg px-3 py-2.5 resize-none transition-colors"
+            style={{
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.06)",
+            }}
+          />
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <p className="text-[11px] text-zinc-600">
+              Manual entries are stored alongside extracted memory facts.
+            </p>
+            <button
+              onClick={handleAdd}
+              disabled={!canAdd}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium rounded-md bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {submitting ? (
+                <div className="w-3 h-3 rounded-full border border-emerald-400/40 border-t-transparent animate-spin" />
+              ) : (
+                <Plus size={12} />
+              )}
+              Add Fact
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
           {loading ? (
             <div className="flex items-center justify-center h-32">
-              <div
-                className="w-5 h-5 rounded-full border-2 border-emerald-400/40 border-t-transparent animate-spin"
-              />
+              <div className="w-5 h-5 rounded-full border-2 border-emerald-400/40 border-t-transparent animate-spin" />
+            </div>
+          ) : facts.length === 0 ? (
+            <div
+              className="rounded-xl p-4 text-[12px] leading-relaxed text-zinc-500"
+              style={{
+                background: "rgba(255,255,255,0.03)",
+                border: "1px solid rgba(255,255,255,0.05)",
+              }}
+            >
+              {emptyState}
             </div>
           ) : (
-            CATEGORIES.map((cat) => (
-              <div key={cat.key} className="group">
-                {/* Category header */}
-                <div className="mb-1.5">
-                  <h3 className="text-xs font-semibold text-zinc-300 tracking-wide">
-                    {cat.label}
-                  </h3>
-                  <p className="text-[11px] text-zinc-600 mt-0.5">
-                    {cat.description}
-                  </p>
-                </div>
-
-                {/* Editable textarea */}
-                <textarea
-                  value={draft[cat.key]}
-                  onChange={(e) =>
-                    setDraft((prev) => ({ ...prev, [cat.key]: e.target.value }))
-                  }
-                  placeholder={`No ${cat.label.toLowerCase()} stored yet...`}
-                  rows={3}
-                  className="w-full text-[13px] leading-relaxed text-zinc-300 placeholder-zinc-600 rounded-lg px-3 py-2.5 resize-none transition-colors"
-                  style={{
-                    background: "rgba(255,255,255,0.04)",
-                    border: isDirty(cat.key)
-                      ? "1px solid rgba(16,185,129,0.3)"
-                      : "1px solid rgba(255,255,255,0.06)",
-                  }}
-                />
-
-                {/* Save button — only visible when changed */}
-                {isDirty(cat.key) && (
-                  <div className="flex items-center gap-2 mt-1.5 animate-fade-in">
-                    <button
-                      onClick={() => handleSave(cat.key)}
-                      disabled={saving === cat.key}
-                      className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-md bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 transition-colors disabled:opacity-50"
-                    >
-                      {saving === cat.key ? (
-                        <div className="w-3 h-3 rounded-full border border-emerald-400/40 border-t-transparent animate-spin" />
-                      ) : (
-                        <FloppyDisk size={12} />
-                      )}
-                      Save
-                    </button>
-                    <button
-                      onClick={() =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          [cat.key]: memory[cat.key],
-                        }))
-                      }
-                      className="px-2.5 py-1 text-[11px] font-medium text-zinc-500 hover:text-zinc-300 transition-colors"
-                    >
-                      Cancel
-                    </button>
+            facts.map((fact) => (
+              <div
+                key={fact.id}
+                className="rounded-xl px-3.5 py-3"
+                style={{
+                  background: "rgba(255,255,255,0.04)",
+                  border: "1px solid rgba(255,255,255,0.06)",
+                }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] leading-relaxed text-zinc-200">
+                      {fact.text}
+                    </p>
+                    <div className="mt-2 flex items-center gap-2 text-[11px] text-zinc-500">
+                      <span>{sourceLabel(fact.source_session_id)}</span>
+                      {formatObservedAt(fact.observed_at) ? (
+                        <>
+                          <span className="text-zinc-700">•</span>
+                          <span>{formatObservedAt(fact.observed_at)}</span>
+                        </>
+                      ) : null}
+                    </div>
                   </div>
-                )}
+                  <button
+                    onClick={() => handleRemove(fact.id)}
+                    disabled={removingId === fact.id}
+                    className="p-1.5 rounded-lg text-zinc-500 hover:text-red-300 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                    aria-label="Remove memory fact"
+                    title="Remove memory fact"
+                  >
+                    {removingId === fact.id ? (
+                      <div className="w-3.5 h-3.5 rounded-full border border-zinc-500/40 border-t-transparent animate-spin" />
+                    ) : (
+                      <Trash size={14} />
+                    )}
+                  </button>
+                </div>
               </div>
             ))
           )}
         </div>
 
-        {/* Footer */}
         <div className="px-5 py-3 shrink-0 border-t border-white/6">
           <p className="text-[11px] text-zinc-600 leading-relaxed">
-            Memory is automatically extracted from your conversations. You can
-            view and edit what the AI remembers about you here.
+            Durable user facts are extracted automatically from conversations and stored individually.
+            Removing a fact stops it from being injected into future prompts.
           </p>
         </div>
       </div>

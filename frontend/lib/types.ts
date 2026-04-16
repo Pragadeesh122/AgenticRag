@@ -125,6 +125,13 @@ export interface AgentInfo {
   structured_output: boolean;
 }
 
-export type MemoryCategory = 'work_context' | 'personal_context' | 'top_of_mind' | 'preferences';
+export interface MemoryFact {
+  id: string;
+  text: string;
+  observed_at: string;
+  source_session_id: string | null;
+}
 
-export type UserMemory = Record<MemoryCategory, string>;
+export interface UserMemory {
+  facts: MemoryFact[];
+}
