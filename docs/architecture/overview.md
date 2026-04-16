@@ -69,23 +69,26 @@ A single PostgreSQL instance stores everything, managed by SQLAlchemy + Alembic:
 - **Users & auth** — `User`, `OAuthAccount` tables (FastAPI-Users)
 - **Chat data** — `ChatSession`, `ChatMessage` tables
 - **Projects** — `Project`, `Document` tables
-- **User memory** — `UserMemory` table
+- **User memory** — `UserMemoryFact` for atomic long-term memory, plus `UserMemory` as a temporary legacy compatibility table during rollout
 
 The `query_db` tool (general chat) connects to this same database through a **read-only user** created by `database/setup-reader.sh`. This prevents LLM-generated SQL from modifying data, but it is not a hard domain-isolation boundary because the reader currently has `SELECT` access across the `public` schema.
 
 ## Redis Roles
 
-A single Redis instance serves five distinct purposes:
+A single Redis instance serves several distinct purposes:
 
 | Role | Key pattern | TTL | Description |
 |------|-------------|-----|-------------|
 | **Session store** | `session:<id>` | 24h | Conversation message history for active chat sessions. Each session holds a JSON array of messages. |
 | **Session ownership** | `session:<id>:user` | 24h | Binds each session to a user ID. Every endpoint verifies ownership before access. |
-| **User memory** | `memory:<user_id>` | None | Hash of long-term memory categories (`work_context`, `personal_context`, `top_of_mind`, `preferences`). Injected into system prompts. |
+| **Memory cursor** | `memory-last-extracted:<session_id>` | 30d | Content-hash cursor for incremental memory extraction. |
+| **Rolling summary** | `memory-summary:<session_id>` | 30d | Compact conversation summary used as extraction context. |
+| **Memory worker lock** | `memory-task-lock:<session_id>` | 5m | Prevents concurrent extraction for the same session. |
+| **Legacy memory backfill** | `memory:<user_id>` | None | Old category-based memory hash, kept temporarily for backfill and rollout cleanup. |
 | **Semantic cache** | `cache:*` | Varies | Caches tool results (web search, KB queries) to avoid redundant LLM/API calls. |
 | **Job queue** | ARQ internals | — | ARQ worker picks up document ingestion jobs from Redis. |
 
-Why Redis for all five? Each role needs low-latency reads during the chat loop. Using separate stores would add connection overhead per request. The roles have naturally different TTLs and key patterns, so they don't conflict.
+Why Redis for all of them? Each role needs low-latency reads during the chat loop. Using separate stores would add connection overhead per request. The roles have naturally different TTLs and key patterns, so they don't conflict.
 
 ## Chat Modes
 
@@ -164,7 +167,7 @@ Key details:
 - Browser-side API calls and SSE still talk directly to FastAPI
 - Protected route loads use Next.js server-side fetches before the page hydrates
 - Messages are saved to Redis (working memory) during the chat turn, then to PostgreSQL (persistent history) after the stream completes
-- User memory is extracted asynchronously via an ARQ worker after each turn
+- User memory is extracted asynchronously via an ARQ worker after each turn into `user_memory_fact`
 - The frontend generates local IDs during streaming, then replaces them with database IDs after the POST returns
 
 ## Service Topology
@@ -175,12 +178,12 @@ All services are defined in `compose.yml` with health checks and dependency orde
 postgres (healthy) ─┐
 redis (healthy) ────┤
 minio (healthy) ────┤
-                    ├── minio-setup (completed) ─── api ─── frontend
-                    │                            └── worker
+                    ├── minio-setup (completed) ─── migrate (completed) ─── api ─── frontend
+                    │                                                     └── worker
                     │
 prometheus ─────────┤
 loki ── promtail    ├── grafana
 tempo ──────────────┘
 ```
 
-The API and worker both run Alembic migrations on startup (`uv run alembic upgrade head`), so the first container to start handles schema creation.
+A dedicated `migrate` service now runs Alembic exactly once before `api` and `worker` start. This avoids concurrent migration races during startup.
