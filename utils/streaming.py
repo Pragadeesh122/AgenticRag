@@ -6,7 +6,7 @@ from tools import tools
 from llm.factory import get_llm_registry
 
 logger = logging.getLogger("orchestrator")
-ORCHESTRATOR_MODEL = os.getenv("ORCHESTRATOR_MODEL", "claude-haiku-4-5")
+ORCHESTRATOR_MODEL = os.getenv("ORCHESTRATOR_MODEL", "gpt-5.4")
 _STREAM_USAGE_PROVIDERS = {"openai", "grok"}
 
 
