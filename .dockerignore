@@ -18,3 +18,10 @@ AGENTS.md
 AGENT_REFERENCE.md
 auth-db
 database/docker-compose.yml
+tests/
+docs/
+monitoring/
+helm/
+*.md
+evals/
+Dockerfile.api.dev

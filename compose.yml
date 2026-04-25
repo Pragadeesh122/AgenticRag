@@ -83,7 +83,7 @@ services:
   migrate:
     build:
       context: .
-      dockerfile: Dockerfile.api
+      dockerfile: Dockerfile.api.dev
     env_file:
       - .env
     environment:
@@ -112,7 +112,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: Dockerfile.api
+      dockerfile: Dockerfile.api.dev
     env_file:
       - .env
     environment:
@@ -147,7 +147,7 @@ services:
   worker:
     build:
       context: .
-      dockerfile: Dockerfile.api
+      dockerfile: Dockerfile.api.dev
     env_file:
       - .env
     environment:
