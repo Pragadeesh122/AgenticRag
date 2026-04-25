@@ -2,7 +2,9 @@
 
 import asyncio
 import logging
+import os
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Depends, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,24 +21,37 @@ from api.session import (
 )
 from api.chat import chat_stream
 from api.projects import router as projects_router
+from api.health import router as health_router
 from memory.semantic import _embed
 from database.models import ChatSession, User, UserMemoryFact
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from database.core import get_db
+from database.core import get_db, engine as _db_engine
 from api.auth.manager import current_active_user, get_user_manager
 from api.chat_sessions import router as chat_sessions_router, messages_router as chat_messages_router
 from api.rate_limit import rate_limit_middleware
 
-import os
 from api.auth.manager import fastapi_users_app
 from api.auth.config import auth_backend, google_oauth_client, SECRET
 from api.auth.schemas import UserRead, UserCreate, UserUpdate
 from api.auth.manager import UserManager
 
-logging.basicConfig(level=logging.INFO, format="%(name)s | %(message)s")
+from observability.logging_config import setup_logging
 
-app = FastAPI(title="AgenticRAG", version="0.1.0")
+setup_logging()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup — nothing special needed (connections are lazy)
+    yield
+    # Shutdown — clean up connections
+    await _db_engine.dispose()
+    from memory.redis_client import redis_client
+    redis_client.close()
+
+
+app = FastAPI(title="AgenticRAG", version="0.1.0", lifespan=lifespan)
 
 from observability.tracing import setup_tracing
 setup_tracing(app)
@@ -97,10 +112,21 @@ async def _prometheus_http_middleware(request: Request, call_next):
 
 app.middleware("http")(rate_limit_middleware)
 
+CORS_ALLOWED_ORIGINS = [
+    o.strip()
+    for o in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+    if o.strip()
+]
+# In dev, also match any localhost port. Disable in prod by not setting this var.
+_cors_localhost_regex = (
+    r"https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+    if os.getenv("CORS_ALLOW_LOCALHOST_REGEX", "true").lower() == "true"
+    else None
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_origins=CORS_ALLOWED_ORIGINS,
+    allow_origin_regex=_cors_localhost_regex,
     allow_methods=["*"],
     allow_headers=["*"],
     allow_credentials=True,
@@ -151,6 +177,7 @@ app.include_router(
     tags=["users"],
 )
 
+app.include_router(health_router)
 app.include_router(projects_router)
 app.include_router(chat_sessions_router)
 app.include_router(chat_messages_router)

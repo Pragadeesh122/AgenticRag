@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SECRET = os.getenv("SECRET_KEY", "super-secret-default-key-keep-private")
+SECRET = os.environ.get("SECRET_KEY") or os.getenv("SECRET_KEY", "super-secret-default-key-keep-private")
 
 cookie_transport = CookieTransport(
     cookie_name="app_token",

@@ -14,7 +14,7 @@ pinecone_client = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 
 minio_client = Minio(
     os.getenv("MINIO_ENDPOINT", "localhost:9000"),
-    access_key=os.getenv("MINIO_ACCESS_KEY", "minioadmin"),
-    secret_key=os.getenv("MINIO_SECRET_KEY", "minioadmin"),
+    access_key=os.environ.get("MINIO_ACCESS_KEY") or os.getenv("MINIO_ACCESS_KEY", "minioadmin"),
+    secret_key=os.environ.get("MINIO_SECRET_KEY") or os.getenv("MINIO_SECRET_KEY", "minioadmin"),
     secure=os.getenv("MINIO_SECURE", "false").lower() == "true",
 )

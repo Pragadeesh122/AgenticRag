@@ -9,7 +9,7 @@ load_dotenv()
 
 # Build asyncpg connection URL
 DB_USER = os.getenv("DB_ADMIN_USER", "admin")
-DB_PASSWORD = os.getenv("DB_ADMIN_PASSWORD", "admin")
+DB_PASSWORD = os.environ.get("DB_ADMIN_PASSWORD") or os.getenv("DB_ADMIN_PASSWORD", "admin")
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "5432")
 DB_NAME = os.getenv("DB_NAME", "agenticrag")
@@ -19,8 +19,27 @@ SYNC_DATABASE_URL = (
     f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 )
 
-engine = create_async_engine(DATABASE_URL, echo=False)
-sync_engine = create_engine(SYNC_DATABASE_URL, echo=False, pool_pre_ping=True)
+# Pool configuration (tunable via env vars)
+_pool_size = int(os.getenv("DB_POOL_SIZE", "5"))
+_max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "10"))
+_pool_recycle = int(os.getenv("DB_POOL_RECYCLE", "1800"))
+
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=False,
+    pool_size=_pool_size,
+    max_overflow=_max_overflow,
+    pool_recycle=_pool_recycle,
+    pool_pre_ping=True,
+)
+sync_engine = create_engine(
+    SYNC_DATABASE_URL,
+    echo=False,
+    pool_size=_pool_size,
+    max_overflow=_max_overflow,
+    pool_recycle=_pool_recycle,
+    pool_pre_ping=True,
+)
 
 async_session_maker = async_sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False
