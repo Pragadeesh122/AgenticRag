@@ -1,0 +1,22 @@
+AgenticRAG has been deployed!
+
+{{- if .Values.ingress.enabled }}
+Access the application at:
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+{{- end }}
+{{- else }}
+To access the application, run:
+  kubectl port-forward svc/{{ include "agenticrag.fullname" . }}-frontend 3000:3000
+
+Then visit http://localhost:3000
+{{- end }}
+
+To check pod status:
+  kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+
+To view API logs:
+  kubectl logs -l app.kubernetes.io/component=api -f
+
+To access the database (temporary port-forward):
+  kubectl port-forward svc/{{ include "agenticrag.fullname" . }}-postgres 5432:5432

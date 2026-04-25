@@ -1,0 +1,44 @@
+{{- if .Values.minio.enabled }}
+# Headless service for StatefulSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-minio-headless
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: 9000
+      targetPort: api
+      protocol: TCP
+      name: api
+  selector:
+    {{- include "agenticrag.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+---
+# ClusterIP service for app connectivity
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-minio
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9000
+      targetPort: api
+      protocol: TCP
+      name: api
+    - port: 9001
+      targetPort: console
+      protocol: TCP
+      name: console
+  selector:
+    {{- include "agenticrag.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+{{- end }}

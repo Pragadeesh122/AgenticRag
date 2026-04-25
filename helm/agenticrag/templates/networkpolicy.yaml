@@ -1,0 +1,180 @@
+{{- if .Values.networkPolicy.enabled }}
+# API: allow ingress from ingress controller and frontend pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-api
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "agenticrag.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: frontend
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - port: 8000
+          protocol: TCP
+  egress:
+    - {} # API needs outbound to DB, Redis, MinIO, Pinecone, LLM APIs
+---
+# Worker: no ingress, egress to DB/Redis/MinIO/external
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-worker
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "agenticrag.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: [] # No inbound traffic
+  egress:
+    - {} # Worker needs outbound to DB, Redis, MinIO, Pinecone, LLM APIs
+---
+# Frontend: allow ingress from ingress controller only
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-frontend
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "agenticrag.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: frontend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - port: 3000
+          protocol: TCP
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: api
+      ports:
+        - port: 8000
+          protocol: TCP
+    - to: # DNS
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+{{- if .Values.postgres.enabled }}
+---
+# PostgreSQL: only accept from api, worker, migrate
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-postgres
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "agenticrag.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: api
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: worker
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: migrate
+      ports:
+        - port: 5432
+          protocol: TCP
+{{- end }}
+{{- if .Values.redis.enabled }}
+---
+# Redis: only accept from api, worker
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-redis
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "agenticrag.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: api
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: worker
+      ports:
+        - port: 6379
+          protocol: TCP
+{{- end }}
+{{- if .Values.minio.enabled }}
+---
+# MinIO: only accept from api, worker, minio-setup
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-minio
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "agenticrag.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: minio
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: api
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: worker
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: minio-setup
+      ports:
+        - port: 9000
+          protocol: TCP
+{{- end }}
+{{- end }}

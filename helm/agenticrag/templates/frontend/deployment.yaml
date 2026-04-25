@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-frontend
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  {{- if not .Values.frontend.autoscaling.enabled }}
+  replicas: {{ .Values.frontend.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "agenticrag.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      labels:
+        {{- include "agenticrag.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: frontend
+    spec:
+      serviceAccountName: {{ include "agenticrag.fullname" . }}-frontend
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1001
+      containers:
+        - name: frontend
+          image: {{ include "agenticrag.frontendImage" . }}
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: INTERNAL_API_URL
+              value: "http://{{ include "agenticrag.fullname" . }}-api:8000"
+            - name: HOSTNAME
+              value: "0.0.0.0"
+            - name: PORT
+              value: "3000"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+          securityContext:
+            runAsUser: 1001
+            runAsGroup: 1001
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: next-cache
+              mountPath: /app/.next/cache
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: next-cache
+          emptyDir: {}
+      {{- with .Values.frontend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.frontend.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.frontend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

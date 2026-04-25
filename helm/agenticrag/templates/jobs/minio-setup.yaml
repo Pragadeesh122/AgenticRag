@@ -1,0 +1,63 @@
+{{- if .Values.minio.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-minio-setup
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio-setup
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "agenticrag.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: minio-setup
+    spec:
+      restartPolicy: Never
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: wait-for-minio
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for MinIO..."
+              until nc -z {{ include "agenticrag.fullname" . }}-minio 9000; do
+                sleep 2
+              done
+              echo "MinIO is ready."
+      containers:
+        - name: minio-setup
+          image: minio/mc:latest
+          command:
+            - sh
+            - -c
+            - |
+              until mc alias set local http://{{ include "agenticrag.fullname" . }}-minio:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY; do
+                echo "Waiting for MinIO to accept connections..."
+                sleep 2
+              done
+              mc ready local
+              mc mb --ignore-existing local/{{ .Values.minio.bucketName }}
+              echo "MinIO bucket setup complete."
+          env:
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agenticrag.secretName" . }}
+                  key: MINIO_ACCESS_KEY
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agenticrag.secretName" . }}
+                  key: MINIO_SECRET_KEY
+{{- end }}

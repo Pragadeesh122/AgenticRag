@@ -1,0 +1,26 @@
+{{/*
+Grafana dashboard ConfigMaps.
+The grafana_dashboard label lets the Grafana sidecar in kube-prometheus-stack
+auto-discover and load these dashboards — even when monitoring.enabled=false.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-grafana-dashboards
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: "AgenticRAG"
+data:
+  # Dashboard JSON files are large. In practice, package them with:
+  #   helm create ... && cp monitoring/grafana/provisioning/dashboards/*.json templates/monitoring/
+  # For now, a placeholder noting the dashboard names:
+  _readme: |
+    Dashboard JSON files to include:
+    - agenticrag-ux-latency.json
+    - agenticrag-agentic-ops.json
+    - agenticrag-economics.json
+    Copy the JSON content from monitoring/grafana/provisioning/dashboards/
+    into this ConfigMap's data section, or use a Helm post-renderer.

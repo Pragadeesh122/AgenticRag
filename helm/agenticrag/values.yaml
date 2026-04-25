@@ -1,0 +1,272 @@
+# ---------------------------------------------------------------------------
+# AgenticRAG Helm Chart — values.yaml
+# Defaults tuned for a single-node K3s deployment (Mac Mini)
+# ---------------------------------------------------------------------------
+
+global:
+  imagePullSecrets: []
+  storageClass: ""  # empty = cluster default (K3s: local-path)
+
+nameOverride: ""
+fullnameOverride: ""
+
+# ---------------------------------------------------------------------------
+# API (FastAPI backend)
+# ---------------------------------------------------------------------------
+api:
+  image:
+    repository: agenticrag-api
+    tag: ""  # defaults to Chart.appVersion
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  uvicornWorkers: 2
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 70
+  podDisruptionBudget:
+    enabled: false
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 15
+    periodSeconds: 20
+    failureThreshold: 3
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: 8000
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    failureThreshold: 3
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ---------------------------------------------------------------------------
+# Worker (ARQ async task worker — same image as API)
+# ---------------------------------------------------------------------------
+worker:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+  podDisruptionBudget:
+    enabled: false
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ---------------------------------------------------------------------------
+# Frontend (Next.js)
+# ---------------------------------------------------------------------------
+frontend:
+  image:
+    repository: agenticrag-frontend
+    tag: ""  # defaults to Chart.appVersion
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 70
+  podDisruptionBudget:
+    enabled: false
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ---------------------------------------------------------------------------
+# PostgreSQL (conditional — set enabled: false to use external)
+# ---------------------------------------------------------------------------
+postgres:
+  enabled: true
+  image:
+    repository: pgvector/pgvector
+    tag: pg17
+  storage:
+    size: 20Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  # External Postgres (used when enabled: false)
+  external:
+    host: ""
+    port: "5432"
+    database: "agenticrag"
+
+# ---------------------------------------------------------------------------
+# Redis (conditional)
+# ---------------------------------------------------------------------------
+redis:
+  enabled: true
+  image:
+    repository: redis/redis-stack-server
+    tag: latest
+  storage:
+    size: 5Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  # External Redis (used when enabled: false)
+  external:
+    host: ""
+    port: "6379"
+
+# ---------------------------------------------------------------------------
+# MinIO (conditional)
+# ---------------------------------------------------------------------------
+minio:
+  enabled: true
+  image:
+    repository: minio/minio
+    tag: latest
+  storage:
+    size: 50Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  bucketName: agenticrag-documents
+  # External MinIO / S3 (used when enabled: false)
+  external:
+    endpoint: ""
+    secure: false
+
+# ---------------------------------------------------------------------------
+# Ingress
+# ---------------------------------------------------------------------------
+ingress:
+  enabled: true
+  className: "traefik"  # K3s ships with Traefik
+  annotations: {}
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: agenticrag.local
+      paths:
+        # API paths
+        - path: /auth
+          pathType: Prefix
+          service: api
+        - path: /users
+          pathType: Prefix
+          service: api
+        - path: /chat
+          pathType: Prefix
+          service: api
+        - path: /session
+          pathType: Prefix
+          service: api
+        - path: /projects
+          pathType: Prefix
+          service: api
+        - path: /metrics
+          pathType: Prefix
+          service: api
+        - path: /health
+          pathType: Prefix
+          service: api
+        - path: /ready
+          pathType: Prefix
+          service: api
+        # Frontend (catch-all, must be last)
+        - path: /
+          pathType: Prefix
+          service: frontend
+  tls: []
+  #  - secretName: agenticrag-tls
+  #    hosts:
+  #      - agenticrag.local
+
+# ---------------------------------------------------------------------------
+# Secrets
+# ---------------------------------------------------------------------------
+secrets:
+  # Set to true to use a pre-existing Secret (e.g. sealed-secrets, external-secrets)
+  externalSecret: false
+  secretName: ""  # name of pre-existing secret (when externalSecret: true)
+
+  # Values used when externalSecret: false.
+  # In production, prefer sealed-secrets or external-secrets-operator.
+  dbAdminUser: "admin"
+  dbAdminPassword: ""     # REQUIRED
+  dbPassword: ""          # REQUIRED (for llm_reader role)
+  secretKey: ""           # REQUIRED (JWT signing key)
+  redisPassword: ""       # optional
+  minioAccessKey: ""      # REQUIRED
+  minioSecretKey: ""      # REQUIRED
+  pineconeApiKey: ""
+  openaiApiKey: ""
+  anthropicApiKey: ""
+  geminiApiKey: ""
+  xaiApiKey: ""
+  braveApiKey: ""
+  authGoogleId: ""
+  authGoogleSecret: ""
+  authGithubId: ""
+  authGithubSecret: ""
+
+# ---------------------------------------------------------------------------
+# Non-sensitive configuration
+# ---------------------------------------------------------------------------
+config:
+  dbName: "agenticrag"
+  dbPoolSize: "5"
+  dbMaxOverflow: "10"
+  dbPoolRecycle: "1800"
+  logFormat: "json"
+  logLevel: "INFO"
+  otelEnabled: "true"
+  otelExporterEndpoint: ""  # auto-computed if monitoring.tempo.enabled
+  documentIngestMode: "worker"
+  corsAllowedOrigins: ""    # auto-computed from ingress host if empty
+  corsAllowLocalhostRegex: "false"
+
+# ---------------------------------------------------------------------------
+# Network Policies
+# ---------------------------------------------------------------------------
+networkPolicy:
+  enabled: false
+
+# ---------------------------------------------------------------------------
+# Monitoring (optional lightweight stack)
+# Deploy kube-prometheus-stack separately for production.
+# Dashboard ConfigMaps are always created for Grafana sidecar discovery.
+# ---------------------------------------------------------------------------
+monitoring:
+  enabled: false

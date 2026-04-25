@@ -1,0 +1,40 @@
+{{- if .Values.redis.enabled }}
+# Headless service for StatefulSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-redis-headless
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: 6379
+      targetPort: redis
+      protocol: TCP
+      name: redis
+  selector:
+    {{- include "agenticrag.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+---
+# ClusterIP service for app connectivity
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-redis
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  type: ClusterIP
+  ports:
+    - port: 6379
+      targetPort: redis
+      protocol: TCP
+      name: redis
+  selector:
+    {{- include "agenticrag.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+{{- end }}

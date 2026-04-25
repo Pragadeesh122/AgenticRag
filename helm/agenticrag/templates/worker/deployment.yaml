@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-worker
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "agenticrag.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        {{- include "agenticrag.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "agenticrag.fullname" . }}-worker
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1000
+      containers:
+        - name: worker
+          image: {{ include "agenticrag.apiImage" . }}
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          command:
+            - uv
+            - run
+            - arq
+            - worker.WorkerSettings
+          envFrom:
+            - configMapRef:
+                name: {{ include "agenticrag.configMapName" . }}
+            - secretRef:
+                name: {{ include "agenticrag.secretName" . }}
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import redis, os; r = redis.Redis(host=os.getenv('REDIS_HOST','localhost'), port=int(os.getenv('REDIS_PORT','6379')), password=os.getenv('REDIS_PASSWORD')); r.ping()"
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.worker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

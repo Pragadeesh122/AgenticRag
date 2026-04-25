@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-api
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  {{- if not .Values.api.autoscaling.enabled }}
+  replicas: {{ .Values.api.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "agenticrag.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        {{- include "agenticrag.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "agenticrag.fullname" . }}-api
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1000
+      containers:
+        - name: api
+          image: {{ include "agenticrag.apiImage" . }}
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          command:
+            - uvicorn
+            - api.server:app
+            - --host
+            - "0.0.0.0"
+            - --port
+            - "8000"
+            - --workers
+            - {{ .Values.api.uvicornWorkers | quote }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "agenticrag.configMapName" . }}
+            - secretRef:
+                name: {{ include "agenticrag.secretName" . }}
+          livenessProbe:
+            {{- toYaml .Values.api.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.api.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.api.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.api.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.api.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

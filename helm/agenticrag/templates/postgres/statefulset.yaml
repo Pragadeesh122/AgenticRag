@@ -1,0 +1,95 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-postgres
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  serviceName: {{ include "agenticrag.fullname" . }}-postgres-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "agenticrag.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: postgres
+  template:
+    metadata:
+      labels:
+        {{- include "agenticrag.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "agenticrag.configMapName" . }}
+                  key: DB_NAME
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agenticrag.secretName" . }}
+                  key: DB_ADMIN_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agenticrag.secretName" . }}
+                  key: DB_ADMIN_PASSWORD
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agenticrag.secretName" . }}
+                  key: DB_PASSWORD
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - $(POSTGRES_USER)
+                - -d
+                - $(POSTGRES_DB)
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - $(POSTGRES_USER)
+                - -d
+                - $(POSTGRES_DB)
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.postgres.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init-scripts
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+      volumes:
+        - name: init-scripts
+          configMap:
+            name: {{ include "agenticrag.fullname" . }}-postgres-init
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if or .Values.postgres.storage.storageClass .Values.global.storageClass }}
+        storageClassName: {{ .Values.postgres.storage.storageClass | default .Values.global.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.postgres.storage.size }}
+{{- end }}

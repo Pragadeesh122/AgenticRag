@@ -1,0 +1,15 @@
+{{- if .Values.frontend.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-frontend
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "agenticrag.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: frontend
+{{- end }}

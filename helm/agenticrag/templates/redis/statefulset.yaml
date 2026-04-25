@@ -1,0 +1,61 @@
+{{- if .Values.redis.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-redis
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  serviceName: {{ include "agenticrag.fullname" . }}-redis-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "agenticrag.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: redis
+  template:
+    metadata:
+      labels:
+        {{- include "agenticrag.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: redis
+    spec:
+      containers:
+        - name: redis
+          image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
+          ports:
+            - name: redis
+              containerPort: 6379
+              protocol: TCP
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.redis.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if or .Values.redis.storage.storageClass .Values.global.storageClass }}
+        storageClassName: {{ .Values.redis.storage.storageClass | default .Values.global.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.redis.storage.size }}
+{{- end }}

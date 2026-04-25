@@ -1,0 +1,76 @@
+{{- if .Values.minio.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-minio
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  serviceName: {{ include "agenticrag.fullname" . }}-minio-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "agenticrag.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: minio
+  template:
+    metadata:
+      labels:
+        {{- include "agenticrag.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: minio
+    spec:
+      containers:
+        - name: minio
+          image: "{{ .Values.minio.image.repository }}:{{ .Values.minio.image.tag }}"
+          command:
+            - server
+            - /data
+            - --console-address
+            - ":9001"
+          ports:
+            - name: api
+              containerPort: 9000
+              protocol: TCP
+            - name: console
+              containerPort: 9001
+              protocol: TCP
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agenticrag.secretName" . }}
+                  key: MINIO_ACCESS_KEY
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agenticrag.secretName" . }}
+                  key: MINIO_SECRET_KEY
+          livenessProbe:
+            tcpSocket:
+              port: 9000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            tcpSocket:
+              port: 9000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.minio.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if or .Values.minio.storage.storageClass .Values.global.storageClass }}
+        storageClassName: {{ .Values.minio.storage.storageClass | default .Values.global.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.minio.storage.size }}
+{{- end }}

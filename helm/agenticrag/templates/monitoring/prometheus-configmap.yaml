@@ -1,0 +1,22 @@
+{{/*
+Prometheus scrape config for AgenticRAG.
+When monitoring.enabled=true, this is mounted by the Prometheus deployment.
+When using external kube-prometheus-stack, use this as additionalScrapeConfigs.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-prometheus-config
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+    scrape_configs:
+      - job_name: agenticrag-api
+        metrics_path: /metrics
+        static_configs:
+          - targets: ["{{ include "agenticrag.fullname" . }}-api:8000"]

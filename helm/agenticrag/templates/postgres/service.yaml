@@ -1,0 +1,40 @@
+{{- if .Values.postgres.enabled }}
+# Headless service for StatefulSet DNS
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-postgres-headless
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: 5432
+      targetPort: postgres
+      protocol: TCP
+      name: postgres
+  selector:
+    {{- include "agenticrag.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+---
+# ClusterIP service for app connectivity
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-postgres
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: postgres
+      protocol: TCP
+      name: postgres
+  selector:
+    {{- include "agenticrag.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+{{- end }}
