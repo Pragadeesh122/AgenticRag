@@ -29,7 +29,6 @@ uploads/
 # Auth DB — contains hardcoded credentials
 auth-db/
 
-prompts
 test_reports
 browser_screenshots
 .claude

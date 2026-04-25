@@ -22,6 +22,16 @@ spec:
       containers:
         - name: redis
           image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
+          {{- if .Values.redis.auth.enabled }}
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agenticrag.secretName" . }}
+                  key: REDIS_PASSWORD
+            - name: REDIS_ARGS
+              value: "--requirepass $(REDIS_PASSWORD)"
+          {{- end }}
           ports:
             - name: redis
               containerPort: 6379
@@ -29,16 +39,28 @@ spec:
           livenessProbe:
             exec:
               command:
+              {{- if .Values.redis.auth.enabled }}
+                - sh
+                - -c
+                - redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping
+              {{- else }}
                 - redis-cli
                 - ping
+              {{- end }}
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 5
           readinessProbe:
             exec:
               command:
+              {{- if .Values.redis.auth.enabled }}
+                - sh
+                - -c
+                - redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping
+              {{- else }}
                 - redis-cli
                 - ping
+              {{- end }}
             initialDelaySeconds: 5
             periodSeconds: 5
             failureThreshold: 3

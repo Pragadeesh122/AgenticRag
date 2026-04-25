@@ -68,7 +68,7 @@ PostgreSQL host — internal service name if enabled, else external.
 {{- if .Values.postgres.enabled }}
 {{- printf "%s-postgres" (include "agenticrag.fullname" .) }}
 {{- else }}
-{{- .Values.postgres.external.host }}
+{{- required "postgres.external.host is required when postgres.enabled=false" .Values.postgres.external.host }}
 {{- end }}
 {{- end }}
 
@@ -87,7 +87,7 @@ Redis host/port.
 {{- if .Values.redis.enabled }}
 {{- printf "%s-redis" (include "agenticrag.fullname" .) }}
 {{- else }}
-{{- .Values.redis.external.host }}
+{{- required "redis.external.host is required when redis.enabled=false" .Values.redis.external.host }}
 {{- end }}
 {{- end }}
 
@@ -106,7 +106,7 @@ MinIO endpoint.
 {{- if .Values.minio.enabled }}
 {{- printf "%s-minio:9000" (include "agenticrag.fullname" .) }}
 {{- else }}
-{{- .Values.minio.external.endpoint }}
+{{- required "minio.external.endpoint is required when minio.enabled=false" .Values.minio.external.endpoint }}
 {{- end }}
 {{- end }}
 
@@ -164,11 +164,30 @@ Frontend URL — auto-compute from ingress host.
 {{- end }}
 
 {{/*
+MinIO public base URL — used for browser-facing presigned URLs.
+Priority: explicit config > auto-computed from MinIO ingress > empty (dev fallback).
+*/}}
+{{- define "agenticrag.minioPublicBaseUrl" -}}
+{{- if .Values.config.minioPublicBaseUrl }}
+{{- .Values.config.minioPublicBaseUrl }}
+{{- else if and .Values.minio.enabled .Values.minio.ingress.enabled }}
+{{- $host := .Values.minio.ingress.host }}
+{{- if .Values.minio.ingress.tls }}
+{{- printf "https://%s" $host }}
+{{- else }}
+{{- printf "http://%s" $host }}
+{{- end }}
+{{- else }}
+{{- "" }}
+{{- end }}
+{{- end }}
+
+{{/*
 Secret name — pre-existing or chart-managed.
 */}}
 {{- define "agenticrag.secretName" -}}
 {{- if .Values.secrets.externalSecret }}
-{{- .Values.secrets.secretName }}
+{{- required "secrets.secretName is required when secrets.externalSecret=true" .Values.secrets.secretName }}
 {{- else }}
 {{- printf "%s-secrets" (include "agenticrag.fullname" .) }}
 {{- end }}

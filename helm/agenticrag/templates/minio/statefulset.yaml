@@ -45,6 +45,8 @@ spec:
                 secretKeyRef:
                   name: {{ include "agenticrag.secretName" . }}
                   key: MINIO_SECRET_KEY
+            - name: MINIO_API_CORS_ALLOW_ORIGIN
+              value: {{ include "agenticrag.frontendUrl" . | quote }}
           livenessProbe:
             tcpSocket:
               port: 9000

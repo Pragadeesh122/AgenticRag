@@ -126,6 +126,8 @@ postgres:
 # ---------------------------------------------------------------------------
 redis:
   enabled: true
+  auth:
+    enabled: false  # enable requirepass on chart-managed Redis (password from chart or external secret)
   image:
     repository: redis/redis-stack-server
     tag: latest
@@ -163,6 +165,15 @@ minio:
       cpu: 500m
       memory: 512Mi
   bucketName: agenticrag-documents
+  # Optional ingress to expose MinIO to browsers for direct presigned-URL uploads.
+  ingress:
+    enabled: false
+    host: "storage.agenticrag.local"
+    annotations: {}
+    tls: []
+    #  - secretName: minio-tls
+    #    hosts:
+    #      - storage.agenticrag.local
   # External MinIO / S3 (used when enabled: false)
   external:
     endpoint: ""
@@ -256,6 +267,7 @@ config:
   documentIngestMode: "worker"
   corsAllowedOrigins: ""    # auto-computed from ingress host if empty
   corsAllowLocalhostRegex: "false"
+  minioPublicBaseUrl: ""    # auto-computed from minio.ingress if enabled; set manually for NodePort/external
 
 # ---------------------------------------------------------------------------
 # Network Policies

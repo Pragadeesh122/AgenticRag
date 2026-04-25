@@ -49,14 +49,15 @@ async def readiness():
         logger.warning(f"readiness: redis check failed: {e}")
         checks["redis"] = "fail"
 
-    # MinIO
+    # MinIO — verify connectivity only, not bucket existence.
+    # The bucket is created by a post-install hook; checking it here would
+    # deadlock helm install --wait (readiness blocks until hook runs, hook
+    # blocks until readiness passes).
     try:
         from clients import minio_client
 
         await asyncio.wait_for(
-            asyncio.to_thread(
-                minio_client.bucket_exists, "agenticrag-documents"
-            ),
+            asyncio.to_thread(minio_client.list_buckets),
             timeout=TIMEOUT,
         )
         checks["minio"] = "ok"

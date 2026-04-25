@@ -15,7 +15,9 @@ data:
   REDIS_PORT: {{ include "agenticrag.redisPort" . | quote }}
   MINIO_ENDPOINT: {{ include "agenticrag.minioEndpoint" . | quote }}
   MINIO_SECURE: {{ include "agenticrag.minioSecure" . | quote }}
-  MINIO_PUBLIC_BASE_URL: {{ include "agenticrag.minioEndpoint" . | quote }}
+  MINIO_PUBLIC_BASE_URL: {{ include "agenticrag.minioPublicBaseUrl" . | quote }}
+  APP_ENV: "production"
+  COOKIE_SECURE: {{ if .Values.ingress.tls }}"true"{{ else }}"false"{{ end }}
   OTEL_ENABLED: {{ .Values.config.otelEnabled | quote }}
   OTEL_EXPORTER_OTLP_ENDPOINT: {{ include "agenticrag.otelEndpoint" . | quote }}
   LOG_FORMAT: {{ .Values.config.logFormat | quote }}

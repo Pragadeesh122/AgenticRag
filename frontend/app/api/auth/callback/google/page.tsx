@@ -4,7 +4,7 @@ import {useEffect, useState, Suspense, useRef} from "react";
 import {useRouter, useSearchParams} from "next/navigation";
 import {useAuth} from "@/components/AuthProvider";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 function CallbackHandler() {
   const router = useRouter();

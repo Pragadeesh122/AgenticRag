@@ -5,12 +5,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SECRET = os.environ.get("SECRET_KEY") or os.getenv("SECRET_KEY", "super-secret-default-key-keep-private")
+_IS_PRODUCTION = os.getenv("APP_ENV") == "production"
+
+if _IS_PRODUCTION:
+    SECRET = os.environ["SECRET_KEY"]
+else:
+    SECRET = os.getenv("SECRET_KEY", "super-secret-default-key-keep-private")
+
+_cookie_secure = os.getenv("COOKIE_SECURE", "true").lower() != "false"
 
 cookie_transport = CookieTransport(
     cookie_name="app_token",
     cookie_max_age=3600 * 24 * 7, # 7 days
-    cookie_secure=True,
+    cookie_secure=_cookie_secure,
     cookie_httponly=True,
     cookie_samesite="lax",
 )
