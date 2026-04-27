@@ -248,6 +248,7 @@ class _ChatCompletionsFacade:
             ttft_emitted = False
             ended_at = started
             output_parts: list[str] = []
+            _completed = False
             try:
                 for chunk in stream_obj:
                     ended_at = time.perf_counter()
@@ -266,6 +267,7 @@ class _ChatCompletionsFacade:
                         usage = chunk_usage
 
                     yield chunk
+                _completed = True
             except Exception:
                 observe_llm_outcome(
                     operation=operation,
@@ -278,52 +280,57 @@ class _ChatCompletionsFacade:
                 record_llm_usage(span, usage=None, cost_usd=None, status="error")
                 raise
             finally:
-                if span_ctx is not None:
-                    span_ctx.__exit__(None, None, None)
-
-            status = "success" if usage is not None else "usage_missing"
-            if usage is None:
-                usage = _estimate_usage(
-                    model=model,
-                    messages=messages,
-                    output_text="".join(output_parts),
-                    tools=tools,
-                    tool_choice=tool_choice,
-                )
-                if usage is not None:
-                    status = "usage_estimated"
-            total_duration = max(ended_at - started, 0.0)
-            cost_usd = (
-                estimate_cost_usd(
-                    provider=provider,
-                    model=model,
-                    usage=usage,
-                    operation=operation,
-                )
-                if usage is not None
-                else None
-            )
-            observe_llm_outcome(
-                operation=operation,
-                provider=provider,
-                model=model,
-                stream=True,
-                status=status,
-                duration_seconds=total_duration,
-                usage=usage,
-                cost_usd=cost_usd,
-            )
-            record_llm_usage(span, usage=usage, cost_usd=cost_usd, status=status)
-
-            if usage is not None and first_token_at is not None:
-                completion_tokens = int(_field(usage, "completion_tokens", 0) or 0)
-                output_elapsed = max(ended_at - first_token_at, 1e-6)
-                if completion_tokens > 0:
-                    observe_llm_output_speed(
+                # On normal completion, record usage while the span is still
+                # alive, then let span_ctx's finally close it.
+                # On error or abandonment, usage was already recorded above.
+                if _completed:
+                    status = "success" if usage is not None else "usage_missing"
+                    if usage is None:
+                        usage = _estimate_usage(
+                            model=model,
+                            messages=messages,
+                            output_text="".join(output_parts),
+                            tools=tools,
+                            tool_choice=tool_choice,
+                        )
+                        if usage is not None:
+                            status = "usage_estimated"
+                    total_duration = max(ended_at - started, 0.0)
+                    cost_usd = (
+                        estimate_cost_usd(
+                            provider=provider,
+                            model=model,
+                            usage=usage,
+                            operation=operation,
+                        )
+                        if usage is not None
+                        else None
+                    )
+                    observe_llm_outcome(
+                        operation=operation,
                         provider=provider,
                         model=model,
-                        tokens_per_second=completion_tokens / output_elapsed,
+                        stream=True,
+                        status=status,
+                        duration_seconds=total_duration,
+                        usage=usage,
+                        cost_usd=cost_usd,
                     )
+                    record_llm_usage(span, usage=usage, cost_usd=cost_usd, status=status)
+
+                    if usage is not None and first_token_at is not None:
+                        completion_tokens = int(_field(usage, "completion_tokens", 0) or 0)
+                        output_elapsed = max(ended_at - first_token_at, 1e-6)
+                        if completion_tokens > 0:
+                            observe_llm_output_speed(
+                                provider=provider,
+                                model=model,
+                                tokens_per_second=completion_tokens / output_elapsed,
+                            )
+                # End the span after all attributes are set (safe: llm_completion_span
+                # uses start_span, so no ContextVar token detach issue).
+                if span_ctx is not None:
+                    span_ctx.__exit__(None, None, None)
 
         return _generator()
 

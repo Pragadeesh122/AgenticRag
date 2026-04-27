@@ -39,44 +39,51 @@ def _safe_set(span, key: str, value: Any) -> None:
 
 @contextmanager
 def chat_turn_span(*, span_name: str, chat_type: str):
-    """Root span for a chat turn (general or project)."""
-    tracer = get_tracer()
-    if tracer is None:
-        yield None
-        return
-    with tracer.start_as_current_span(span_name) as span:
-        _set_context_attributes(span)
-        span.set_attribute("chat.type", chat_type)
-        yield span
+    """Root span for a chat turn (general or project).
 
-
-@contextmanager
-def agent_route_span(*, route_mode: str):
-    """Span wrapping agent routing (classify + select).
-
-    Caller is responsible for emitting ``observe_agent_route`` — this helper
-    only manages the span so that the existing metric call-sites stay intact.
+    Uses start_span instead of start_as_current_span so the ContextVar token
+    is never attached/detached across asyncio yield boundaries.
     """
     tracer = get_tracer()
     if tracer is None:
         yield None
         return
-    with tracer.start_as_current_span("agent.route") as span:
+    span = tracer.start_span(span_name)
+    try:
         _set_context_attributes(span)
-        span.set_attribute("route.mode", route_mode)
+        span.set_attribute("chat.type", chat_type)
         yield span
+    finally:
+        span.end()
 
 
 @contextmanager
-def classify_intent_span():
-    """Child span for the classification LLM call inside agent routing."""
+def agent_route_span(*, route_mode: str):
     tracer = get_tracer()
     if tracer is None:
         yield None
         return
-    with tracer.start_as_current_span("agent.classify_intent") as span:
+    span = tracer.start_span("agent.route")
+    try:
+        _set_context_attributes(span)
+        span.set_attribute("route.mode", route_mode)
+        yield span
+    finally:
+        span.end()
+
+
+@contextmanager
+def classify_intent_span():
+    tracer = get_tracer()
+    if tracer is None:
+        yield None
+        return
+    span = tracer.start_span("agent.classify_intent")
+    try:
         span.set_attribute("gen_ai.operation.name", "classify")
         yield span
+    finally:
+        span.end()
 
 
 @contextmanager
@@ -89,19 +96,24 @@ def llm_completion_span(
 ):
     """Span wrapping an LLM completion or embedding call.
 
-    For streaming, the caller should keep the context manager open for the
-    generator's full lifetime (enter before yielding, exit in ``finally``).
+    Uses start_span so it is safe to hold open across sync generator yields
+    without triggering ContextVar token errors on detach.
+    The span is ended explicitly via span.end() — callers must NOT call
+    span_ctx.__exit__() themselves; record_llm_usage before the span ends.
     """
     tracer = get_tracer()
     if tracer is None:
         yield None
         return
-    with tracer.start_as_current_span(f"llm.{operation}") as span:
+    span = tracer.start_span(f"llm.{operation}")
+    try:
         _set_context_attributes(span)
         span.set_attribute("gen_ai.system", provider)
         span.set_attribute("gen_ai.request.model", model)
         span.set_attribute("stream", stream)
         yield span
+    finally:
+        span.end()
 
 
 def record_llm_usage(span, *, usage: Any, cost_usd: float | None, status: str) -> None:
@@ -128,42 +140,48 @@ def record_ttft_event(span, *, ttft_seconds: float) -> None:
 
 @contextmanager
 def retrieval_span(*, span_name: str = "retrieval.pipeline", **attrs):
-    """Span for retrieval pipeline or sub-steps."""
     tracer = get_tracer()
     if tracer is None:
         yield None
         return
-    with tracer.start_as_current_span(span_name) as span:
+    span = tracer.start_span(span_name)
+    try:
         _set_context_attributes(span)
         for k, v in attrs.items():
             _safe_set(span, k, v)
         yield span
+    finally:
+        span.end()
 
 
 @contextmanager
 def tool_span(*, tool_name: str):
-    """Span wrapping a single tool execution."""
     tracer = get_tracer()
     if tracer is None:
         yield None
         return
-    with tracer.start_as_current_span("tool.execute") as span:
+    span = tracer.start_span("tool.execute")
+    try:
         _set_context_attributes(span)
         span.set_attribute("tool.name", tool_name)
         yield span
+    finally:
+        span.end()
 
 
 @contextmanager
 def ingestion_span(*, span_name: str = "ingestion.document", **attrs):
-    """Span for document ingestion pipeline or sub-steps."""
     tracer = get_tracer()
     if tracer is None:
         yield None
         return
-    with tracer.start_as_current_span(span_name) as span:
+    span = tracer.start_span(span_name)
+    try:
         for k, v in attrs.items():
             _safe_set(span, k, v)
         yield span
+    finally:
+        span.end()
 
 
 @contextmanager
@@ -176,9 +194,12 @@ def memory_extraction_span(*, phase: str, **attrs):
     if tracer is None:
         yield None
         return
-    with tracer.start_as_current_span(f"memory.{phase}") as span:
+    span = tracer.start_span(f"memory.{phase}")
+    try:
         _set_context_attributes(span)
         span.set_attribute("memory.phase", phase)
         for k, v in attrs.items():
             _safe_set(span, k, v)
         yield span
+    finally:
+        span.end()
