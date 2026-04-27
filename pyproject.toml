@@ -8,7 +8,7 @@ dependencies = [
     "dotenv>=0.9.9",
     "faiss-cpu>=1.13.2",
     "google-genai>=1.66.0",
-    "litellm==1.83.0",
+    "litellm==1.83.1",
     "openai>=2.28.0",
     "pinecone>=8.1.0",
     "playwright>=1.58.0",
