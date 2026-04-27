@@ -23,6 +23,7 @@ spec:
         - name: minio
           image: "{{ .Values.minio.image.repository }}:{{ .Values.minio.image.tag }}"
           command:
+            - minio
             - server
             - /data
             - --console-address
@@ -30,6 +31,7 @@ spec:
           ports:
             - name: api
               containerPort: 9000
+              hostPort: 9000
               protocol: TCP
             - name: console
               containerPort: 9001

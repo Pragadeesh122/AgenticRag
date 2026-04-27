@@ -9,6 +9,11 @@ spec:
   {{- if not .Values.api.autoscaling.enabled }}
   replicas: {{ .Values.api.replicaCount }}
   {{- end }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       {{- include "agenticrag.selectorLabels" . | nindent 6 }}
@@ -33,6 +38,10 @@ spec:
       initContainers:
         - name: wait-for-db
           image: busybox:1.36
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
           command:
             - sh
             - -c
