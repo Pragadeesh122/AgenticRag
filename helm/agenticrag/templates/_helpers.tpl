@@ -122,10 +122,10 @@ MinIO endpoint.
 OTEL endpoint — use tempo service if monitoring enabled, else config value.
 */}}
 {{- define "agenticrag.otelEndpoint" -}}
-{{- if and .Values.monitoring.enabled }}
+{{- if .Values.config.otelExporterEndpoint }}
+{{- .Values.config.otelExporterEndpoint }}
+{{- else if and .Values.monitoring.enabled .Values.monitoring.tempo.enabled }}
 {{- printf "http://%s-tempo:4318" (include "agenticrag.fullname" .) }}
-{{- else }}
-{{- .Values.config.otelExporterEndpoint | default "" }}
 {{- end }}
 {{- end }}
 
@@ -151,7 +151,9 @@ CORS allowed origins — auto-compute from ingress host if not set.
 Frontend URL — auto-compute from ingress host.
 */}}
 {{- define "agenticrag.frontendUrl" -}}
-{{- if and .Values.ingress.enabled .Values.ingress.hosts }}
+{{- if .Values.config.frontendUrl }}
+{{- .Values.config.frontendUrl }}
+{{- else if and .Values.ingress.enabled .Values.ingress.hosts }}
 {{- $host := (index .Values.ingress.hosts 0).host }}
 {{- if .Values.ingress.tls }}
 {{- printf "https://%s" $host }}
@@ -160,6 +162,24 @@ Frontend URL — auto-compute from ingress host.
 {{- end }}
 {{- else }}
 {{- "http://localhost:3000" }}
+{{- end }}
+{{- end }}
+
+{{/*
+Public API URL — browser-facing URL for the API (used as NEXT_PUBLIC_API_URL).
+*/}}
+{{- define "agenticrag.apiPublicUrl" -}}
+{{- if .Values.config.apiPublicUrl }}
+{{- .Values.config.apiPublicUrl }}
+{{- else if and .Values.ingress.enabled .Values.ingress.hosts }}
+{{- $host := (index .Values.ingress.hosts 0).host }}
+{{- if .Values.ingress.tls }}
+{{- printf "https://%s/api" $host }}
+{{- else }}
+{{- printf "http://%s/api" $host }}
+{{- end }}
+{{- else }}
+{{- "http://localhost:8000" }}
 {{- end }}
 {{- end }}
 

@@ -38,6 +38,8 @@ spec:
           env:
             - name: INTERNAL_API_URL
               value: "http://{{ include "agenticrag.fullname" . }}-api:8000"
+            - name: NEXT_PUBLIC_API_URL
+              value: {{ include "agenticrag.apiPublicUrl" . | quote }}
             - name: HOSTNAME
               value: "0.0.0.0"
             - name: PORT

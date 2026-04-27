@@ -6,6 +6,9 @@
 global:
   imagePullSecrets: []
   storageClass: ""  # empty = cluster default (K3s: local-path)
+  # For local OrbStack dev set to LoadBalancer (OrbStack assigns routable IPs).
+  # For production leave as ClusterIP and use Ingress instead.
+  serviceType: LoadBalancer
 
 nameOverride: ""
 fullnameOverride: ""
@@ -265,8 +268,16 @@ config:
   otelEnabled: "true"
   otelExporterEndpoint: ""  # auto-computed if monitoring.tempo.enabled
   documentIngestMode: "worker"
-  corsAllowedOrigins: ""    # auto-computed from ingress host if empty
+  corsAllowedOrigins: "http://localhost:3000"
   corsAllowLocalhostRegex: "false"
+  # Override the public frontend URL used for OAuth redirect URIs.
+  # For local dev via SSH tunnel set this to http://localhost:3000.
+  # Leave empty to auto-compute from ingress host (production).
+  frontendUrl: "http://localhost:3000"
+  # Public URL of the API as seen by the browser (sets NEXT_PUBLIC_API_URL).
+  # For local dev via SSH tunnel set to http://localhost:8000.
+  # Leave empty to auto-compute from ingress host (production).
+  apiPublicUrl: "http://localhost:8000"
   minioPublicBaseUrl: ""    # auto-computed from minio.ingress if enabled; set manually for NodePort/external
 
 # ---------------------------------------------------------------------------
@@ -281,4 +292,23 @@ networkPolicy:
 # Dashboard ConfigMaps are always created for Grafana sidecar discovery.
 # ---------------------------------------------------------------------------
 monitoring:
-  enabled: false
+  enabled: true
+  grafana:
+    adminUser: "admin"
+    adminPassword: "admin"
+    image: "grafana/grafana:11.1.5"
+    storage:
+      size: 1Gi
+  prometheus:
+    image: "prom/prometheus:v2.54.1"
+    storage:
+      size: 2Gi
+  loki:
+    image: "grafana/loki:2.9.8"
+    storage:
+      size: 2Gi
+  promtail:
+    image: "grafana/promtail:2.9.8"
+  tempo:
+    enabled: true
+    image: "grafana/tempo:2.6.1"
