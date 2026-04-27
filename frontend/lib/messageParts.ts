@@ -144,7 +144,7 @@ export function deriveToolCallsFromParts(parts: MessagePart[]): ToolCall[] {
 }
 
 export function deriveThinkingEntriesFromParts(parts: MessagePart[]): ThinkingEntry[] {
-  return parts.flatMap((part) => {
+  return parts.flatMap((part): ThinkingEntry[] => {
     if (part.type === "reasoning") {
       return [{ type: "text" as const, content: part.text }];
     }

@@ -1,4 +1,4 @@
-import type { ThreadMessageLike } from '@assistant-ui/react';
+import type { ThreadMessageLike, MessageStatus } from '@assistant-ui/react';
 import type { Message } from './types';
 import { buildAssistantPartsFromLegacy, getDefaultAssistantStatus } from './messageParts';
 
@@ -38,7 +38,7 @@ export function convertMessage(message: Message): ThreadMessageLike {
     role: 'assistant',
     content: parts.length > 0 ? parts : [{ type: 'text' as const, text: message.content }],
     createdAt: new Date(message.createdAt),
-    status: message.status ?? getDefaultAssistantStatus(message) ?? { type: 'running' },
+    status: (message.status ?? getDefaultAssistantStatus(message) ?? { type: 'running' }) as MessageStatus,
     metadata: {
       custom: {
         dbId: message.dbId,

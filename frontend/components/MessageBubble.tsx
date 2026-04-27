@@ -19,7 +19,7 @@ import QuizRenderer, {tryParseQuiz} from "./QuizRenderer";
 import ChartRenderer, {tryParseChart} from "./ChartRenderer";
 
 const streamdownPlugins = {code};
-const streamdownThemes = ["github-light", "github-dark"] as const;
+const streamdownThemes: ["github-light", "github-dark"] = ["github-light", "github-dark"];
 const streamdownRemend = {
   links: true,
   images: true,
