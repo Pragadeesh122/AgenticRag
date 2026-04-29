@@ -19,7 +19,7 @@ spec:
     {{- include "agenticrag.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: minio
 ---
-# ClusterIP service for app connectivity
+# Service for app connectivity (LoadBalancer exposes MinIO for browser presigned URLs)
 apiVersion: v1
 kind: Service
 metadata:
@@ -28,7 +28,7 @@ metadata:
     {{- include "agenticrag.labels" . | nindent 4 }}
     app.kubernetes.io/component: minio
 spec:
-  type: ClusterIP
+  type: {{ .Values.global.serviceType | default "ClusterIP" }}
   ports:
     - port: 9000
       targetPort: api
