@@ -1,0 +1,48 @@
+{{- if .Values.ddns.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-ddns
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ddns
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "agenticrag.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: ddns
+  template:
+    metadata:
+      labels:
+        {{- include "agenticrag.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: ddns
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: cloudflare-ddns
+          image: {{ .Values.ddns.image }}
+          env:
+            - name: CF_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agenticrag.fullname" . }}-cloudflare-token
+                  key: api-token
+            - name: DOMAINS
+              value: {{ join "," .Values.ddns.domains | quote }}
+            - name: PROXIED
+              value: {{ .Values.ddns.proxied | quote }}
+            - name: IP6_PROVIDER
+              value: {{ if .Values.ddns.ipv6 }}"cloudflare.trace"{{ else }}"none"{{ end }}
+            - name: UPDATE_CRON
+              value: "*/5 * * * *"
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+{{- end }}

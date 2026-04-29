@@ -278,7 +278,33 @@ config:
   # For local dev via SSH tunnel set to http://localhost:8000.
   # Leave empty to auto-compute from ingress host (production).
   apiPublicUrl: "http://localhost:8000"
-  minioPublicBaseUrl: ""    # auto-computed from minio.ingress if enabled; set manually for NodePort/external
+  minioPublicBaseUrl: "http://localhost:9000"  # SSH-tunnel: -L 9000:192.168.139.2:9000
+
+# ---------------------------------------------------------------------------
+# Cloudflare Tunnel — zero port-forwarding ingress via cloudflared
+# ---------------------------------------------------------------------------
+tunnel:
+  enabled: false
+  image: "cloudflare/cloudflared:latest"
+
+# ---------------------------------------------------------------------------
+# Cloudflare DDNS — keeps DNS A records updated for dynamic IPs
+# ---------------------------------------------------------------------------
+ddns:
+  enabled: false
+  image: "favonia/cloudflare-ddns:1"
+  domains: []
+  proxied: true
+  ipv6: false
+
+# ---------------------------------------------------------------------------
+# cert-manager + Cloudflare DNS-01 (disabled by default — enable in prod)
+# ---------------------------------------------------------------------------
+certManager:
+  enabled: false
+  email: ""                   # Let's Encrypt notification email
+  cloudflare:
+    apiToken: ""              # Cloudflare API token (Zone:DNS:Edit)
 
 # ---------------------------------------------------------------------------
 # Network Policies
@@ -299,6 +325,14 @@ monitoring:
     image: "grafana/grafana:11.1.5"
     storage:
       size: 1Gi
+    ingress:
+      enabled: false
+      host: ""
+      annotations: {}
+      tls: []
+      basicAuth:
+        enabled: false
+        users: ""   # htpasswd format — generate with: htpasswd -nb <user> <password>
   prometheus:
     image: "prom/prometheus:v2.54.1"
     storage:

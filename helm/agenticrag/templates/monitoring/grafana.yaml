@@ -127,3 +127,68 @@ spec:
       port: 3001
       targetPort: 3000
 {{- end }}
+{{- if and .Values.monitoring.enabled .Values.monitoring.grafana.ingress.enabled }}
+{{- if .Values.monitoring.grafana.ingress.basicAuth.enabled }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-grafana-basicauth
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+type: Opaque
+stringData:
+  users: {{ required "monitoring.grafana.ingress.basicAuth.users is required when basicAuth.enabled=true" .Values.monitoring.grafana.ingress.basicAuth.users | quote }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: grafana-auth
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+spec:
+  basicAuth:
+    secret: {{ include "agenticrag.fullname" . }}-grafana-basicauth
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "agenticrag.fullname" . }}-grafana
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+  annotations:
+    {{- with .Values.monitoring.grafana.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- if .Values.monitoring.grafana.ingress.basicAuth.enabled }}
+    traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-grafana-auth@kubernetescrd
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.monitoring.grafana.ingress.tls }}
+  tls:
+    {{- range .Values.monitoring.grafana.ingress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.monitoring.grafana.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "agenticrag.fullname" . }}-grafana
+                port:
+                  number: 3001
+{{- end }}

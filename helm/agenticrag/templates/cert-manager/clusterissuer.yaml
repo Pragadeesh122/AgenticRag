@@ -1,0 +1,20 @@
+{{- if .Values.certManager.enabled }}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+  labels:
+    {{- include "agenticrag.labels" . | nindent 4 }}
+spec:
+  acme:
+    email: {{ required "certManager.email is required when certManager.enabled=true" .Values.certManager.email }}
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: {{ include "agenticrag.fullname" . }}-cloudflare-token
+              key: api-token
+{{- end }}
