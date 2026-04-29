@@ -23,6 +23,7 @@ spec:
         - name: minio
           image: "{{ .Values.minio.image.repository }}:{{ .Values.minio.image.tag }}"
           command:
+            - minio
             - server
             - /data
             - --console-address
@@ -45,6 +46,8 @@ spec:
                 secretKeyRef:
                   name: {{ include "agenticrag.secretName" . }}
                   key: MINIO_SECRET_KEY
+            - name: MINIO_API_CORS_ALLOW_ORIGIN
+              value: {{ include "agenticrag.frontendUrl" . | quote }}
           livenessProbe:
             tcpSocket:
               port: 9000

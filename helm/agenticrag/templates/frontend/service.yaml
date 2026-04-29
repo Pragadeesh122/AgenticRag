@@ -6,7 +6,7 @@ metadata:
     {{- include "agenticrag.labels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
 spec:
-  type: ClusterIP
+  type: {{ .Values.global.serviceType | default "ClusterIP" }}
   ports:
     - port: 3000
       targetPort: http

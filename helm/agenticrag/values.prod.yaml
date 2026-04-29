@@ -1,0 +1,109 @@
+# ---------------------------------------------------------------------------
+# AgenticRAG — production overrides for runaxai.com
+# Deploy with:
+#   helm upgrade agenticrag ./helm/agenticrag \
+#     -f helm/agenticrag/values.yaml \
+#     -f helm/agenticrag/values.prod.yaml \
+#     --set secrets.dbAdminPassword=... \
+#     --set secrets.dbPassword=... \
+#     --set secrets.secretKey=... \
+#     --set secrets.minioAccessKey=... \
+#     --set secrets.minioSecretKey=... \
+#     --set secrets.anthropicApiKey=... \
+#     ... (other API keys) \
+#     --set certManager.cloudflare.apiToken=... \
+#     --set monitoring.grafana.ingress.basicAuth.users='user:$apr1$hash'
+# ---------------------------------------------------------------------------
+
+global:
+  serviceType: ClusterIP   # ingress handles external traffic in prod
+
+# ---------------------------------------------------------------------------
+# Ingress — separate hosts for frontend and API
+# ---------------------------------------------------------------------------
+ingress:
+  enabled: true
+  className: traefik
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: runaxai.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
+    - host: api.runaxai.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: api
+  tls:
+    - secretName: runaxai-com-tls
+      hosts:
+        - runaxai.com
+    - secretName: api-runaxai-com-tls
+      hosts:
+        - api.runaxai.com
+
+# ---------------------------------------------------------------------------
+# MinIO — expose via ingress for presigned URL uploads
+# ---------------------------------------------------------------------------
+minio:
+  ingress:
+    enabled: true
+    host: storage.runaxai.com
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    tls:
+      - secretName: storage-runaxai-com-tls
+        hosts:
+          - storage.runaxai.com
+
+# ---------------------------------------------------------------------------
+# Non-sensitive config — production URLs
+# ---------------------------------------------------------------------------
+config:
+  frontendUrl: "https://runaxai.com"
+  apiPublicUrl: "https://api.runaxai.com"
+  minioPublicBaseUrl: "https://storage.runaxai.com"
+  corsAllowedOrigins: "https://runaxai.com"
+  corsAllowLocalhostRegex: "false"
+  logLevel: "INFO"
+  cookieDomain: "runaxai.com"
+
+# ---------------------------------------------------------------------------
+# Cloudflare Tunnel — replaces DDNS + port forwarding
+# ---------------------------------------------------------------------------
+tunnel:
+  enabled: true
+
+# ---------------------------------------------------------------------------
+# Cloudflare DDNS — disabled (tunnel handles connectivity)
+# ---------------------------------------------------------------------------
+ddns:
+  enabled: false
+
+# ---------------------------------------------------------------------------
+# cert-manager — disabled (Cloudflare Tunnel handles TLS at the edge)
+# ---------------------------------------------------------------------------
+certManager:
+  enabled: false
+
+# ---------------------------------------------------------------------------
+# Monitoring — Grafana behind BasicAuth
+# ---------------------------------------------------------------------------
+monitoring:
+  grafana:
+    adminUser: "admin"
+    adminPassword: ""   # pass via --set monitoring.grafana.adminPassword=...
+    ingress:
+      enabled: true
+      host: grafana.runaxai.com
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+      tls:
+        - secretName: grafana-runaxai-com-tls
+          hosts:
+            - grafana.runaxai.com
+      basicAuth:
+        enabled: false

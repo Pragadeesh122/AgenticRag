@@ -29,7 +29,6 @@ uploads/
 # Auth DB — contains hardcoded credentials
 auth-db/
 
-prompts
 test_reports
 browser_screenshots
 .claude
@@ -39,4 +38,5 @@ screenshots
 test-screenshots
 
 # Eval reports (generated)
-evals/reports/
+evals/reports/helm/values-secrets.yaml
+helm/values-secrets.yaml

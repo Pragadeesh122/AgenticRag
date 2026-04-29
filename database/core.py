@@ -7,9 +7,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+_IS_PRODUCTION = os.getenv("APP_ENV") == "production"
+
 # Build asyncpg connection URL
 DB_USER = os.getenv("DB_ADMIN_USER", "admin")
-DB_PASSWORD = os.environ.get("DB_ADMIN_PASSWORD") or os.getenv("DB_ADMIN_PASSWORD", "admin")
+if _IS_PRODUCTION:
+    DB_PASSWORD = os.environ["DB_ADMIN_PASSWORD"]
+else:
+    DB_PASSWORD = os.getenv("DB_ADMIN_PASSWORD", "admin")
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "5432")
 DB_NAME = os.getenv("DB_NAME", "agenticrag")

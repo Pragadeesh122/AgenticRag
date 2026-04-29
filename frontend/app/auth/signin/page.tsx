@@ -37,7 +37,7 @@ function GoogleBrandIcon({size = 18}: {size?: number}) {
 }
 
 export default function SignIn() {
-  const {user, isLoading, refreshUser} = useAuth();
+  const {user, isLoading} = useAuth();
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
@@ -59,8 +59,10 @@ export default function SignIn() {
       const res = await apiFetch("/auth/google/authorize");
       if (res.ok) {
         const data = await res.json();
-        // Redirect user to Google OAuth page
-        window.location.href = data.authorization_url;
+        // Force account picker so users can switch accounts after logout.
+        const url = new URL(data.authorization_url);
+        url.searchParams.set("prompt", "select_account");
+        window.location.href = url.toString();
       } else {
         console.error("Failed to get Google authorization URL");
         setError("Failed to start Google authentication");
@@ -84,8 +86,9 @@ export default function SignIn() {
       }
 
       await loginWithCredentials(email.trim(), password);
-      await refreshUser();
-      router.replace("/chat");
+      // Full page navigation ensures the server-side auth check on /chat
+      // sees the newly-set cookie (SPA navigation via router can race it).
+      window.location.href = "/chat";
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Authentication failed";

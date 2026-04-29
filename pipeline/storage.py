@@ -11,6 +11,8 @@ from clients import minio_client
 
 logger = logging.getLogger("pipeline.storage")
 
+_IS_PRODUCTION = os.getenv("APP_ENV") == "production"
+
 BUCKET_NAME = "agenticrag-documents"
 
 
@@ -43,10 +45,17 @@ def _presign_client() -> Minio:
         )
         return minio_client
 
+    if _IS_PRODUCTION:
+        access_key = os.environ["MINIO_ACCESS_KEY"]
+        secret_key = os.environ["MINIO_SECRET_KEY"]
+    else:
+        access_key = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
+        secret_key = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+
     return Minio(
         endpoint,
-        access_key=os.getenv("MINIO_ACCESS_KEY", "minioadmin"),
-        secret_key=os.getenv("MINIO_SECRET_KEY", "minioadmin"),
+        access_key=access_key,
+        secret_key=secret_key,
         secure=(parsed.scheme.lower() == "https"),
         region=os.getenv("MINIO_REGION", "us-east-1"),
     )
