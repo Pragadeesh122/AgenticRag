@@ -26,3 +26,4 @@ data:
   CORS_ALLOWED_ORIGINS: {{ include "agenticrag.corsAllowedOrigins" . | quote }}
   CORS_ALLOW_LOCALHOST_REGEX: {{ .Values.config.corsAllowLocalhostRegex | quote }}
   FRONTEND_URL: {{ include "agenticrag.frontendUrl" . | quote }}
+  COOKIE_DOMAIN: {{ .Values.config.cookieDomain | default "" | quote }}
