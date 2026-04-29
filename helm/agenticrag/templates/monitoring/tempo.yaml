@@ -16,6 +16,11 @@ data:
           protocols:
             http:
               endpoint: "0.0.0.0:4318"
+    ingester:
+      max_block_duration: 5m
+    compactor:
+      compaction:
+        block_retention: 24h
     storage:
       trace:
         backend: local
@@ -61,7 +66,7 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi
+              memory: 256Mi
             limits:
               cpu: 500m
               memory: 512Mi
