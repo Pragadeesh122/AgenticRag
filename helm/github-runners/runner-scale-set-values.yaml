@@ -1,0 +1,38 @@
+githubConfigUrl: "https://github.com/Pragadeesh122/AgenticRag"
+
+# Create this secret in the same namespace where the runner scale set is installed.
+# Supported auth options:
+# - GitHub App: github_app_id, github_app_installation_id, github_app_private_key
+# - PAT (classic): github_token
+githubConfigSecret: "arc-github-auth"
+
+# Keep this aligned with the value you plan to use in `runs-on`.
+runnerScaleSetName: "agenticrag-runners"
+
+# Optional runner group in GitHub. Leave Default unless you already manage groups.
+runnerGroup: "Default"
+
+# Start at zero idle runners and burst on demand.
+minRunners: 0
+maxRunners: 5
+
+# Use GitHub's default Docker-in-Docker runner mode first.
+# The official chart injects the matching pod template and uses the GitHub runner image.
+containerMode:
+  type: "dind"
+
+# Give runner pods in-cluster kubectl/helm access via the deployer ServiceAccount.
+# Apply helm/github-runners/rbac.yaml first to create the SA and ClusterRoleBinding.
+template:
+  spec:
+    serviceAccountName: github-runner-deployer
+
+# Uncomment to route outbound traffic through a proxy.
+# proxy:
+#   http:
+#     url: http://proxy.example.com:3128
+#   https:
+#     url: http://proxy.example.com:3128
+#   noProxy:
+#     - github.com
+#     - api.github.com

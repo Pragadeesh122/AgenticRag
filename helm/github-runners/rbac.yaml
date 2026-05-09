@@ -1,0 +1,50 @@
+# ServiceAccount used by the GitHub runner pods so they can run kubectl/helm
+# against the local K3s cluster without needing an external kubeconfig.
+#
+# Apply once before installing the runner scale set:
+#   kubectl apply -f helm/github-runners/rbac.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: github-runner-deployer
+  namespace: arc-runners
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: github-runner-deployer
+rules:
+  - apiGroups: ["", "apps", "batch", "networking.k8s.io", "autoscaling", "policy"]
+    resources:
+      - namespaces
+      - configmaps
+      - secrets
+      - services
+      - serviceaccounts
+      - persistentvolumeclaims
+      - pods
+      - deployments
+      - statefulsets
+      - daemonsets
+      - replicasets
+      - jobs
+      - ingresses
+      - horizontalpodautoscalers
+      - poddisruptionbudgets
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["cert-manager.io"]
+    resources: ["clusterissuers", "certificates", "certificaterequests"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: github-runner-deployer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: github-runner-deployer
+subjects:
+  - kind: ServiceAccount
+    name: github-runner-deployer
+    namespace: arc-runners
