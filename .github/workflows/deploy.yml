@@ -57,7 +57,7 @@ jobs:
           cache-to: type=registry,ref=${{ env.API_IMAGE }}:buildcache,mode=max
 
       - name: Scan API image (Trivy)
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.API_IMAGE }}:${{ steps.tag.outputs.value }}
           severity: CRITICAL
@@ -81,7 +81,7 @@ jobs:
           cache-to: type=registry,ref=${{ env.FRONTEND_IMAGE }}:buildcache,mode=max
 
       - name: Scan frontend image (Trivy)
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.FRONTEND_IMAGE }}:${{ steps.tag.outputs.value }}
           severity: CRITICAL
