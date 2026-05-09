@@ -10,8 +10,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  API_IMAGE: ghcr.io/${{ github.repository_owner }}/agenticrag-api
-  FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/agenticrag-frontend
+  # GHCR requires lowercase; hardcode rather than relying on github.repository_owner
+  # which preserves the original casing of "Pragadeesh122".
+  API_IMAGE: ghcr.io/pragadeesh122/agenticrag-api
+  FRONTEND_IMAGE: ghcr.io/pragadeesh122/agenticrag-frontend
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -47,11 +49,22 @@ jobs:
           context: .
           file: Dockerfile
           push: true
+          platforms: linux/arm64
           tags: |
             ${{ env.API_IMAGE }}:${{ steps.tag.outputs.value }}
             ${{ env.API_IMAGE }}:latest
           cache-from: type=registry,ref=${{ env.API_IMAGE }}:buildcache
           cache-to: type=registry,ref=${{ env.API_IMAGE }}:buildcache,mode=max
+
+      - name: Scan API image (Trivy)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.API_IMAGE }}:${{ steps.tag.outputs.value }}
+          severity: CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          format: table
 
       - name: Build & push frontend
         uses: docker/build-push-action@v5
@@ -59,12 +72,23 @@ jobs:
           context: frontend
           file: frontend/Dockerfile
           push: true
+          platforms: linux/arm64
           tags: |
             ${{ env.FRONTEND_IMAGE }}:${{ steps.tag.outputs.value }}
             ${{ env.FRONTEND_IMAGE }}:latest
           build-args: NEXT_PUBLIC_API_URL=https://api.runaxai.com
           cache-from: type=registry,ref=${{ env.FRONTEND_IMAGE }}:buildcache
           cache-to: type=registry,ref=${{ env.FRONTEND_IMAGE }}:buildcache,mode=max
+
+      - name: Scan frontend image (Trivy)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.FRONTEND_IMAGE }}:${{ steps.tag.outputs.value }}
+          severity: CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          format: table
 
   # ---------------------------------------------------------------------------
   # 2. Deploy to K3s via Helm
@@ -128,3 +152,50 @@ jobs:
             --set "global.imagePullSecrets[0].name=ghcr-pull-secret" \
             --atomic \
             --timeout 10m
+
+      # Catches ingress / cert / DNS regressions that pass pod readiness.
+      # Retries because cert-manager and ingress can lag a few seconds behind
+      # the Helm release going Ready.
+      - name: Smoke test
+        run: |
+          for i in 1 2 3 4 5; do
+            if curl -fsS --max-time 10 https://api.runaxai.com/health; then
+              echo "smoke test passed"
+              exit 0
+            fi
+            echo "attempt $i failed, retrying in 6s..."
+            sleep 6
+          done
+          echo "smoke test failed after 5 attempts"
+          exit 1
+
+  # ---------------------------------------------------------------------------
+  # 3. Notify on failure (runs on GitHub-hosted runner so it still fires
+  #    even if the Mac mini is offline / runners are down).
+  # ---------------------------------------------------------------------------
+  notify-failure:
+    name: Notify on failure
+    runs-on: ubuntu-latest
+    needs: [build-push, deploy]
+    if: failure()
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const sha = context.sha.substring(0, 7);
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Deploy failed: ${sha}`,
+              body: [
+                `**Commit:** ${context.sha}`,
+                `**Run:** ${run}`,
+                `**Branch:** ${context.ref}`,
+                ``,
+                `Triggered by @${context.actor}.`
+              ].join('\n'),
+              labels: ['deploy-failure']
+            });
