@@ -157,7 +157,7 @@ export default function AnimatedDemo() {
           return (
             <div
               key={tool.name}
-              className="transition-all duration-400"
+              className="transition-all duration-[400ms]"
               style={{
                 opacity: show ? 1 : 0,
                 transform: show ? "translateY(0)" : "translateY(8px)",
@@ -233,7 +233,7 @@ export default function AnimatedDemo() {
 
         {/* Assistant response */}
         <div
-          className="transition-all duration-400"
+          className="transition-all duration-[400ms]"
           style={{
             opacity: showAssistant ? 1 : 0,
             transform: showAssistant ? "translateY(0)" : "translateY(8px)",

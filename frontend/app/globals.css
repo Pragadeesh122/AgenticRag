@@ -18,15 +18,15 @@
   --color-sidebar: #161618;
   --color-sidebar-foreground: #e4e4e7;
 
-  /* Landing page semantic text levels (light theme) */
-  --color-lp-text: #0a0a0a;
-  --color-lp-text-secondary: #525252;
-  --color-lp-text-muted: #9ca3af;
-  --color-lp-text-faint: #d1d5db;
+  /* Landing page semantic text levels (dark theme) */
+  --color-lp-text: #f4f4f5;
+  --color-lp-text-secondary: #a1a1aa;
+  --color-lp-text-muted: #71717a;
+  --color-lp-text-faint: #3f3f46;
   --color-lp-accent: #10b981;
-  --color-lp-surface: #f7f7f8;
-  --color-lp-border: #e5e7eb;
-  --color-lp-border-subtle: #f0f0f1;
+  --color-lp-surface: #1c1c1f;
+  --color-lp-border: rgba(255,255,255,0.08);
+  --color-lp-border-subtle: rgba(255,255,255,0.05);
 }
 
 * {
@@ -494,8 +494,12 @@ textarea {
 }
 
 @keyframes lineGrow {
-  from { width: 0; opacity: 0; }
-  to { width: 100%; opacity: 1; }
+  from { transform: scaleX(0); opacity: 0; }
+  to { transform: scaleX(1); opacity: 1; }
+}
+
+.lp-line-grow {
+  transform-origin: left center;
 }
 
 @keyframes dotPulse {
@@ -552,29 +556,78 @@ textarea {
 /* ─── Landing page interactive styles ─── */
 
 .lp-nav-signin {
-  color: #6b7280;
-  transition: color 0.15s;
+  color: rgba(255,255,255,0.45);
+  transition: color 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .lp-nav-signin:hover {
-  color: #111;
+  color: rgba(255,255,255,0.9);
 }
 
 .lp-btn-primary {
-  background: #0a0a0a;
-  transition: background 0.15s, transform 0.15s;
+  background: #f4f4f5;
+  color: #0a0a0a;
+  transition: background 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .lp-btn-primary:hover {
-  background: #1a1a1a;
+  background: #ffffff;
   transform: translateY(-1px);
+}
+.lp-btn-primary:active {
+  transform: scale(0.97);
 }
 
 .lp-btn-ghost {
-  color: #525252;
-  border: 1px solid #e5e7eb;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  color: rgba(255,255,255,0.55);
+  border: 1px solid rgba(255,255,255,0.1);
+  transition: color 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .lp-btn-ghost:hover {
-  color: #111;
-  border-color: #d1d5db;
-  background: #f7f7f8;
+  color: rgba(255,255,255,0.9);
+  border-color: rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.05);
+  transform: translateY(-1px);
+}
+.lp-btn-ghost:active {
+  transform: scale(0.97);
+}
+
+.lp-btn-cta {
+  background: #f4f4f5;
+  color: #0a0a0a;
+  transition: background 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.lp-btn-cta:hover {
+  background: #ffffff;
+  transform: translateY(-1px);
+}
+.lp-btn-cta:active {
+  transform: scale(0.97);
+}
+
+/* ─── Marquee ─── */
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  animation: marquee 36s linear infinite;
+  will-change: transform;
+}
+
+/* ─── Hero entrance stagger ─── */
+.hero-fade-1 {
+  animation: fadeInUp 0.75s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both;
+}
+.hero-fade-2 {
+  animation: fadeInUp 0.75s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both;
+}
+.hero-fade-3 {
+  animation: fadeInUp 0.75s cubic-bezier(0.16, 1, 0.3, 1) 0.35s both;
+}
+.hero-fade-4 {
+  animation: fadeInUp 0.75s cubic-bezier(0.16, 1, 0.3, 1) 0.5s both;
+}
+.hero-fade-right {
+  animation: fadeInScale 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both;
 }
