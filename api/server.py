@@ -28,7 +28,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from database.core import get_db, engine as _db_engine
 from api.auth.manager import current_active_user, get_user_manager
-from api.chat_sessions import router as chat_sessions_router, messages_router as chat_messages_router
+from api.chat_sessions import (
+    router as chat_sessions_router,
+    messages_router as chat_messages_router,
+)
 from api.rate_limit import rate_limit_middleware
 
 from api.auth.manager import fastapi_users_app
@@ -37,6 +40,7 @@ from api.auth.schemas import UserRead, UserCreate, UserUpdate
 from api.auth.manager import UserManager
 
 from observability.logging_config import setup_logging
+from observability.tracing import setup_tracing
 
 setup_logging()
 
@@ -48,12 +52,12 @@ async def lifespan(app: FastAPI):
     # Shutdown — clean up connections
     await _db_engine.dispose()
     from memory.redis_client import redis_client
+
     redis_client.close()
 
 
 app = FastAPI(title="AgenticRAG", version="0.1.0", lifespan=lifespan)
 
-from observability.tracing import setup_tracing
 setup_tracing(app)
 
 HTTP_REQUESTS_TOTAL = Counter(
@@ -67,6 +71,7 @@ HTTP_REQUEST_DURATION_SECONDS = Histogram(
     ["method", "path"],
     buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10),
 )
+
 
 def _metrics_path(request: Request) -> str:
     route = request.scope.get("route")
@@ -161,11 +166,11 @@ app.include_router(
 
 app.include_router(
     fastapi_users_app.get_oauth_router(
-        google_oauth_client, 
-        auth_backend, 
+        google_oauth_client,
+        auth_backend,
         SECRET,
         associate_by_email=True,
-        redirect_url=f"{FRONTEND_URL}/api/auth/callback/google"
+        redirect_url=f"{FRONTEND_URL}/api/auth/callback/google",
     ),
     prefix="/auth/google",
     tags=["auth"],
@@ -206,6 +211,7 @@ class MemoryFactCreate(BaseModel):
 class ChangePasswordData(BaseModel):
     current_password: str
     new_password: str
+
 
 @app.post("/chat/backend-session")
 def new_session(user: User = Depends(current_active_user)):
@@ -272,7 +278,9 @@ def remove_session(session_id: str, user: User = Depends(current_active_user)):
 
 
 @app.get("/chat/memory")
-async def get_chat_memory(user=Depends(current_active_user), db: AsyncSession = Depends(get_db)):
+async def get_chat_memory(
+    user=Depends(current_active_user), db: AsyncSession = Depends(get_db)
+):
     stmt = (
         select(UserMemoryFact)
         .where(

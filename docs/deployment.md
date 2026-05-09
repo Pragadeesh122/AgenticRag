@@ -68,6 +68,12 @@ Some MinIO builds return `NotImplemented` for bucket CORS. In that case the setu
 - **Redis** — single instance. Consider Redis Cluster for high availability.
 - **PostgreSQL** — single instance. Consider read replicas for scale.
 
+## GitHub Actions Runners
+
+Optional self-hosted GitHub Actions runner setup now lives under `/Users/pragadeesh/Developer/AgenticRag/helm/github-runners`.
+
+This uses GitHub's official Actions Runner Controller Helm charts and the official `ghcr.io/actions/actions-runner` image, rather than embedding runner pods into the main application chart. Keep the controller and runner scale set in dedicated namespaces separate from the app release.
+
 ## Monitoring Setup
 
 ### Prometheus

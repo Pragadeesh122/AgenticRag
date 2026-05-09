@@ -1,6 +1,7 @@
 """Agent router — classifies user intent and selects the appropriate agent."""
 
 import logging
+import os
 import time
 from clients import llm_client
 from agents.registry import AGENTS
@@ -11,6 +12,7 @@ from observability.metrics import observe_agent_route
 from observability.spans import agent_route_span as _agent_route_span, classify_intent_span
 
 logger = logging.getLogger("agents.router")
+CLASSIFICATION_MODEL = os.getenv("ORCHESTRATOR_MODEL", "gpt-5.4")
 
 CLASSIFICATION_PROMPT = """\
 You are an intent classifier for a document Q&A system. Based on the conversation, \
@@ -44,6 +46,7 @@ def classify_intent(messages: list[dict]) -> tuple[str, str]:
                     })
 
             response = llm_client.chat.completions.create(
+                model=CLASSIFICATION_MODEL,
                 messages=classification_messages,
                 max_completion_tokens=10,
                 temperature=0,
