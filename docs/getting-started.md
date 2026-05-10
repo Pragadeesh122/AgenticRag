@@ -87,7 +87,9 @@ If you switch embedding models, ensure dimensions match:
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `DENSE_EMBEDDING_DIMENSION` | 3072 | Pinecone dense index |
-| `SMALL_EMBEDDING_DIMENSION` | 256 | Redis semantic caches |
+| `DENSE_EMBEDDING_MODEL` | `text-embedding-3-large` | Dense retrieval embedding model |
+| `SMALL_EMBEDDING_MODEL` | `text-embedding-3-small` | Redis semantic caches and memory embeddings |
+| `SMALL_EMBEDDING_DIMENSION` | 1536 | Redis semantic caches and `user_memory_fact.embedding` |
 
 ### Auth
 
@@ -97,6 +99,27 @@ If you switch embedding models, ensure dimensions match:
 | `AUTH_GOOGLE_ID` | Google OAuth client ID |
 | `AUTH_GOOGLE_SECRET` | Google OAuth client secret |
 | `FRONTEND_URL` | Frontend base URL used for OAuth callback redirects |
+| `COOKIE_SECURE` | Set to `false` only for non-HTTPS local browser testing |
+| `COOKIE_DOMAIN` | Optional cookie domain for production deployments |
+
+Google OAuth should be configured with the frontend callback URL:
+
+```text
+${FRONTEND_URL}/api/auth/callback/google
+```
+
+The frontend callback forwards the returned `code` and `state` to the backend exchange endpoint at `/auth/google/callback`.
+
+### API and Browser URLs
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NEXT_PUBLIC_API_URL` | — | Browser-visible FastAPI base URL used by the frontend |
+| `INTERNAL_API_URL` | `NEXT_PUBLIC_API_URL` fallback | Server-side FastAPI base URL for protected route SSR |
+| `MINIO_PUBLIC_BASE_URL` | — | Browser-visible MinIO/S3 base URL for presigned upload/download URLs |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Comma-separated browser origins allowed by FastAPI |
+| `CORS_ALLOW_LOCALHOST_REGEX` | `true` | Allows any localhost/127.0.0.1 port in development |
+| `ENABLE_API_DOCS` | `false` | Enables `/docs`, `/redoc`, and `/openapi.json` when set to `true` |
 
 ### Observability (optional)
 
@@ -126,7 +149,7 @@ uv run crawl4ai-setup  # headless browser for web crawling
 uv run alembic upgrade head
 
 # Start the API server
-uv run python main.py  # FastAPI on :8000
+uv run uvicorn api.server:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ### Frontend

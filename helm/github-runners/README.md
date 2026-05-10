@@ -43,7 +43,7 @@ kubectl create secret generic arc-github-auth \
   --from-file=github_app_private_key=private-key.pem
 ```
 
-3. Update `/Users/pragadeesh/Developer/AgenticRag/helm/github-runners/runner-scale-set-values.yaml`:
+3. Update `helm/github-runners/runner-scale-set-values.yaml`:
 
 - Set `githubConfigUrl` to the repository or organization that should own the runners.
 - Keep `githubConfigSecret` aligned with the secret you created.
@@ -55,7 +55,7 @@ kubectl create secret generic arc-github-auth \
 helm install agenticrag-runners \
   --namespace arc-runners \
   --create-namespace \
-  -f /Users/pragadeesh/Developer/AgenticRag/helm/github-runners/runner-scale-set-values.yaml \
+  -f helm/github-runners/runner-scale-set-values.yaml \
   oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
 ```
 

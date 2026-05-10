@@ -14,8 +14,8 @@ docker compose up
 postgres (healthy) ─┐
 redis (healthy) ────┤
 minio (healthy) ────┤
-                    ├── minio-setup (completed) ─── api ─── frontend
-                    │                            └── worker
+                    ├── minio-setup (completed) ─── migrate (completed) ─── api ─── frontend
+                    │                                                   └── worker
                     │
 prometheus ─────────┤
 loki ── promtail    ├── grafana
@@ -36,7 +36,12 @@ Required secrets: `DB_ADMIN_PASSWORD`, `DB_PASSWORD`, `MINIO_ACCESS_KEY`, `MINIO
 
 ### Database Migrations
 
-Both the API and worker run `uv run alembic upgrade head` on startup. The first container to start handles schema creation. Subsequent containers see the migration is already applied and proceed.
+Docker Compose uses a dedicated `migrate` service that runs `uv run alembic upgrade head` after PostgreSQL, Redis, MinIO, and `minio-setup` are healthy. The API and worker wait for that service to complete before starting, which avoids concurrent migration races.
+
+The Helm chart also applies migrations before serving traffic:
+- `templates/jobs/migrate.yaml` defines a pre-upgrade hook job.
+- `templates/api/deployment.yaml` includes a `run-migration` init container before the API container starts.
+- The worker does not run migrations itself.
 
 ### MinIO Setup
 
@@ -70,9 +75,40 @@ Some MinIO builds return `NotImplemented` for bucket CORS. In that case the setu
 
 ## GitHub Actions Runners
 
-Optional self-hosted GitHub Actions runner setup now lives under `/Users/pragadeesh/Developer/AgenticRag/helm/github-runners`.
+Optional self-hosted GitHub Actions runner setup lives under `helm/github-runners`.
 
 This uses GitHub's official Actions Runner Controller Helm charts and the official `ghcr.io/actions/actions-runner` image, rather than embedding runner pods into the main application chart. Keep the controller and runner scale set in dedicated namespaces separate from the app release.
+
+## Helm Chart
+
+The application chart lives at `helm/agenticrag` and deploys the API, worker, frontend, PostgreSQL with pgvector, Redis Stack, MinIO, ingress, optional monitoring, Cloudflare tunnel/DDNS helpers, cert-manager resources, and network policies.
+
+Key values:
+
+| Area | Values |
+|------|--------|
+| Public URLs | `config.frontendUrl`, `config.apiPublicUrl`, `config.minioPublicBaseUrl` |
+| CORS | `config.corsAllowedOrigins`, `config.corsAllowLocalhostRegex` |
+| API docs | `config.enableApiDocs` |
+| Auth cookies | `config.cookieDomain`, generated `COOKIE_SECURE` from ingress TLS |
+| Ingestion | `config.documentIngestMode` |
+| Secrets | `secrets.*` or `secrets.externalSecret` + `secrets.secretName` |
+
+Production overrides in `helm/agenticrag/values.prod.yaml` set:
+
+| Setting | Value |
+|---------|-------|
+| Frontend URL | `https://runaxai.com` |
+| API URL | `https://api.runaxai.com` |
+| MinIO public URL | `https://storage.runaxai.com` |
+| CORS origin | `https://runaxai.com` |
+| Cookie domain | `runaxai.com` |
+
+Because the backend builds the Google OAuth redirect URI from `FRONTEND_URL`, the production Google callback URL is:
+
+```text
+https://runaxai.com/api/auth/callback/google
+```
 
 ## Monitoring Setup
 
@@ -81,6 +117,8 @@ This uses GitHub's official Actions Runner Controller Helm charts and the offici
 Prometheus scrapes the API's `/metrics` endpoint. Config at `monitoring/prometheus/prometheus.yml`.
 
 The API exposes both standard HTTP metrics and custom RunaxAI metrics (LLM, tools, agents, orchestration). See [Observability](architecture/observability.md) for the full metrics catalog.
+
+The `/metrics` handler rejects requests carrying public proxy forwarding headers (`X-Forwarded-For` or `X-Real-IP`) so metrics remain intended for direct in-cluster or local Prometheus scraping.
 
 ### Loki + Promtail
 

@@ -54,7 +54,7 @@ This prevents common LLM failure modes: calling the same search twice, running o
 
 ### Conversation Summarization
 
-When prompt tokens exceed 5,000, older messages are summarized to keep the context window manageable. The summarizer (`utils/summarizer.py`):
+When prompt tokens exceed 40,000, older messages are summarized to keep the context window manageable. The summarizer (`utils/summarizer.py`):
 
 1. Splits messages into "old" and "recent" (keeping the last 4 non-tool messages)
 2. Sends old messages to the LLM with a summarization prompt
@@ -64,7 +64,7 @@ The split point is adjusted to avoid cutting in the middle of a tool call/respon
 
 ## Project Chat
 
-The user uploads documents to a project and chats with them. Instead of tools, this mode uses agent routing and RAG retrieval.
+The user uploads documents to a project and chats with them. This mode always uses agent routing and RAG retrieval. Agents can also opt into a small scoped tool loop by setting `tool_names`, but the built-in agents currently rely on retrieved document context only.
 
 ### Pipeline
 
@@ -82,7 +82,8 @@ The flow in `api/project_chat.py`:
 1. **Agent routing** — the router classifies user intent and selects a specialized agent (reasoning, summary, quiz, visualization). The agent's system prompt replaces the default in the message history.
 2. **Retrieval** — the user's query is embedded and matched against the project's Pinecone index. Agent-specific overrides can change `top_k` and hybrid search `alpha`.
 3. **Context injection** — retrieved chunks are formatted into a context block and appended to the user message. The context is ephemeral — only the raw user text is persisted.
-4. **Streaming** — the LLM generates a response grounded in the retrieved context. No tools are available.
+4. **Streaming** — the LLM generates a response grounded in the retrieved context.
+5. **Optional agent tools** — if the selected agent declares `tool_names`, only those registered tools are exposed and the project-chat tool budget is lower than general chat (`3` reasoning steps, `4` total tool calls).
 
 ### Summarization Thresholds
 
@@ -90,7 +91,7 @@ Project chat has higher thresholds than general chat because RAG context blocks 
 
 | Trigger | Threshold |
 |---------|-----------|
-| Prompt tokens | 10,000 |
+| Prompt tokens | 60,000 |
 | Message count | 18 (fallback when token usage is unavailable) |
 
 ### SSE Event Types
@@ -100,7 +101,7 @@ Both chat modes stream Server-Sent Events to the frontend:
 | Event | Data | When |
 |-------|------|------|
 | `token` | Text chunk | Each streamed token |
-| `tool` | `{"name": "...", "args": {...}}` | Tool call started (general only) |
+| `tool` | `{"name": "...", "args": {...}}` | Tool call started (general chat, or project agents with scoped tools) |
 | `thinking` | `{"content": "..."}` | Reasoning step or result summary |
 | `agent` | `{"name": "...", "description": "..."}` | Agent selected (project only) |
 | `retrieval` | `{"sources": [...], "count": N}` | Sources found (project only) |

@@ -20,6 +20,8 @@ flowchart TD
 Agents are defined as `Agent` dataclass instances in `agents/base.py`:
 
 ```python
+from dataclasses import dataclass, field
+
 @dataclass
 class Agent:
     name: str                          # Unique identifier
@@ -32,6 +34,7 @@ class Agent:
     structured_output: bool = False    # Output parsed as JSON
     output_schema: str = ""            # JSON schema hint in prompt
     context_instructions: str = ""     # Extra instructions with context
+    tool_names: list[str] = field(default_factory=list) # Scoped project-chat tools
 ```
 
 ### Registry
@@ -66,6 +69,8 @@ The classifier is context-aware: if the user says "one more" or "again", it sees
 | **quiz** | Interactive quizzes, test questions | Yes (JSON) | None |
 | **visualization** | Charts, mermaid diagrams, data tables | Yes (JSON) | None |
 
+All built-in agents currently leave `tool_names` empty, so they answer from retrieved project context without external tool calls.
+
 ### Structured Output Agents
 
 Quiz and visualization agents set `structured_output=True` and include an `output_schema` in their system prompt that describes the expected JSON format.
@@ -96,6 +101,9 @@ Your task is to...
 
     # Optional: extra instructions appended to retrieved context
     context_instructions="Focus on...",
+
+    # Optional: expose only these registered tools during project chat
+    tool_names=["search"],
 )
 ```
 

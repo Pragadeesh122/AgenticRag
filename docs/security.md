@@ -10,9 +10,10 @@ Authentication uses FastAPI-Users with a `jwt_cookie` backend. The JWT is stored
 |---------|-------|
 | Cookie name | `app_token` |
 | Max age | 7 days |
-| Secure | `true` |
+| Secure | `true` by default (`COOKIE_SECURE=false` only for non-HTTPS local testing) |
 | HttpOnly | `true` |
 | SameSite | `lax` |
+| Domain | Optional `COOKIE_DOMAIN` |
 | JWT algorithm | HS256 |
 | JWT audience | `fastapi-users:auth` |
 
@@ -110,12 +111,16 @@ So the current posture is read-only safety, not hard data-domain isolation.
 ## CORS
 
 ```python
-allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"]
-allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+allow_origins=CORS_ALLOWED_ORIGINS  # default: ["http://localhost:3000"]
+allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?$"  # when CORS_ALLOW_LOCALHOST_REGEX=true
 allow_credentials=True
 ```
 
-Only localhost origins are allowed. Credentials (cookies) are included so the JWT cookie is forwarded.
+Credentials (cookies) are included so the JWT cookie is forwarded. Production Helm values set `CORS_ALLOWED_ORIGINS=https://runaxai.com` and disable the localhost regex.
+
+## Metrics Exposure
+
+The `/metrics` endpoint is unauthenticated for Prometheus, but it rejects requests that arrive with public proxy forwarding headers (`X-Forwarded-For` or `X-Real-IP`). This keeps metrics intended for direct local or in-cluster scraping instead of public ingress access.
 
 ## Prompt Security
 

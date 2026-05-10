@@ -41,7 +41,8 @@ RootLayout (fonts, Providers)
 │       │   │   ├── LineChart / RadarChart
 │       │   │   └── ComparisonTable
 │       │   └── Streamdown (markdown rendering)
-│       └── ChatInput (textarea + submit)
+│       ├── AttachmentModal (preview/download for chat attachments)
+│       └── ChatInput (textarea + submit + optional attachments)
 └── ProjectPage (dark theme)
     ├── ProjectSidebar (documents, upload, search, sessions)
     └── ChatArea (same as above + agent selector + sources)
@@ -57,7 +58,7 @@ Cookie-based JWT authentication via FastAPI-Users:
 4. Login sets an `httponly` cookie (`app_token`) — no tokens in localStorage
 5. All browser API calls include `credentials: "include"` to send the cookie
 
-Google OAuth redirects through `/auth/google/authorize` → Google → `/api/auth/callback/google`.
+Google OAuth redirects through `/auth/google/authorize` → Google → `/api/auth/callback/google`. The `/api/auth/callback/google` frontend page then forwards `code` and `state` to the backend `/auth/google/callback` exchange endpoint.
 
 ## API Communication
 
@@ -78,11 +79,27 @@ On the SSR path, the Next.js server forwards the incoming cookie to FastAPI usin
 
 All persistence (sessions, messages, projects) is handled by SQLAlchemy in the backend — no ORM or database access in the frontend.
 
+## Chat Attachments
+
+General chat can attach images and documents through `ChatInput`.
+
+Flow:
+
+1. The frontend calls `/api/chat/upload` to receive a scoped MinIO presigned PUT URL.
+2. The browser uploads the file directly to object storage without cookies.
+3. The returned attachment ref is sent with `/api/chat/stream`.
+4. Existing attachments can be previewed or downloaded through `/api/chat/attachments/url`.
+
+Supported extensions: `png`, `jpg`, `jpeg`, `webp`, `gif`, `pdf`, `txt`, `md`, `csv`, `docx`.
+
+Project document upload remains separate under `/projects/{id}/upload` and feeds the RAG ingestion pipeline.
+
 ## State Management
 
 No global state library. Each page component manages its own state:
 
 - **`ChatPage`** — sessions list, active session, messages, streaming state
+- **`ChatInput`** — pending uploads, attachment validation, and per-message attachment state
 - **`ProjectPage`** — same, plus documents list, selected agent, retrieval sources, and retrieval-only project search results
 
 Session switching, message sending, and streaming are all coordinated through React state in the page component, passed down as props.

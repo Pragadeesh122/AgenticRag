@@ -21,7 +21,7 @@ FastAPI-Users with cookie-based JWT. The auth cookie (`app_token`) is set as `ht
 | POST | `/auth/reset-password` | No | Reset password with token |
 | POST | `/auth/verify` | No | Verify email with token |
 | GET | `/auth/google/authorize` | No | Start Google OAuth flow |
-| GET | `/auth/google/callback` | No | Google OAuth callback |
+| GET | `/auth/google/callback` | No | Backend OAuth exchange endpoint used by the frontend callback |
 | POST | `/auth/change-password` | Yes | Change password (email/password accounts only) |
 | GET | `/users/me` | Yes | Get current user |
 | PATCH | `/users/me` | Yes | Update current user |
@@ -29,6 +29,7 @@ FastAPI-Users with cookie-based JWT. The auth cookie (`app_token`) is set as `ht
 Current local-development behavior:
 - password reset and verification tokens are logged by the backend
 - no email delivery service is wired in this repo by default
+- Google should redirect to `${FRONTEND_URL}/api/auth/callback/google`; that frontend callback forwards `code` and `state` to `/auth/google/callback`
 
 ## Chat
 
@@ -66,10 +67,37 @@ Current local-development behavior:
 
 **Request:**
 ```json
-{"sessionId": "a1b2c3d4e5f6", "message": "What is..."}
+{"sessionId": "a1b2c3d4e5f6", "message": "What is...", "attachments": []}
 ```
 
 **Response:** Server-Sent Events stream. See [Streaming](../frontend/streaming.md) for event types.
+
+### General Chat Attachments
+
+General chat supports direct-to-MinIO attachment uploads. Images are passed to the LLM as presigned image URLs. PDFs are sent as native file blocks when accepted by the token limit. TXT, MD, CSV, and DOCX files are text-extracted and inlined into the LLM message.
+
+Limits enforced by both frontend and backend:
+
+| Limit | Value |
+|-------|-------|
+| Files per message | 5 |
+| Files per chat session | 10 |
+| File size | 20 MB |
+| Total session attachment bytes | 20 MB |
+| Tokens per document | 25,000 |
+| Total attachment tokens per session | 25,000 |
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/chat/upload` | Yes | Create a chat attachment ref and presigned PUT URL |
+| GET | `/chat/attachments/url?key=...` | Yes | Get a short-lived presigned GET URL for preview/download |
+
+**POST `/chat/upload`** request:
+```json
+{"filename": "notes.pdf", "fileSize": 1048576, "mimeType": "application/pdf"}
+```
+
+The returned `storageKey` is scoped under `chat/{user_id}/...`; `/chat/stream` rejects attachments outside the caller's prefix.
 
 ### Persisted Chat History
 
@@ -90,13 +118,16 @@ These endpoints manage durable chat sessions and messages stored in PostgreSQL.
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/chat/memory` | Yes | Get user's stored memory (all 4 categories) |
-| PUT | `/chat/memory` | Yes | Update a single memory category |
+| GET | `/chat/memory` | Yes | List active atomic memory facts |
+| POST | `/chat/memory` | Yes | Add one manual atomic memory fact |
+| DELETE | `/chat/memory/{fact_id}` | Yes | Supersede one active memory fact |
 
-**PUT `/chat/memory`** request:
+**POST `/chat/memory`** request:
 ```json
-{"category": "work_context", "content": "Senior engineer at..."}
+{"text": "Prefers concise explanations"}
 ```
+
+Memory is stored in `user_memory_fact`; the old four-category `user_memory` table is legacy compatibility, not the primary API.
 
 ## Projects
 
@@ -183,7 +214,18 @@ Supported file types: `pdf`, `txt`, `md`, `csv`, `docx`
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/metrics` | No | Prometheus metrics endpoint |
+| GET | `/metrics` | No | Prometheus metrics endpoint; rejects public proxy-forwarded requests |
+
+## Health
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/health` | No | Liveness probe |
+| GET | `/ready` | No | Readiness probe for PostgreSQL, Redis, and MinIO connectivity |
+
+## OpenAPI Docs
+
+FastAPI's generated docs are disabled by default. Set `ENABLE_API_DOCS=true` to expose `/docs`, `/redoc`, and `/openapi.json`.
 
 ## Rate Limits
 
@@ -221,7 +263,7 @@ Both `/chat/stream` and `/projects/{id}/chat` return SSE streams:
 
 ## CORS
 
-Allowed origins: `http://localhost:3000`, `http://127.0.0.1:3000`, plus regex matching `https?://(localhost|127\.0\.0\.1)(:\d+)?`.
+Allowed origins come from `CORS_ALLOWED_ORIGINS` (default `http://localhost:3000`). In development, `CORS_ALLOW_LOCALHOST_REGEX=true` also allows regex matches for `https?://(localhost|127\.0\.0\.1)(:\d+)?`.
 
 Credentials are allowed (cookies).
 

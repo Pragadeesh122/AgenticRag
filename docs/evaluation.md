@@ -25,6 +25,8 @@ uv run pytest
 | `test_eval_metrics.py` | Retrieval metric implementations (Recall, MRR, NDCG) |
 | `test_query_db.py` | SQL query tool safety |
 | `test_memory_tasks.py` | Memory extraction and persistence |
+| `test_memory_api.py` | Atomic memory API list/add/delete behavior |
+| `test_memory_semantic.py` | Semantic memory extraction, consolidation, and pgvector lookup helpers |
 | `test_chat_export.py` | Chat session export |
 | `test_project_search.py` | Project document search |
 
