@@ -35,7 +35,7 @@ from utils.summarizer import summarize_messages
 
 logger = logging.getLogger("api.project_chat")
 
-MAX_PROMPT_TOKENS = 10000
+MAX_PROMPT_TOKENS = 60000
 MAX_MESSAGES_BEFORE_SUMMARY = 18
 
 # Tool-loop budgets for the agent orchestrator. Kept lower than general chat —

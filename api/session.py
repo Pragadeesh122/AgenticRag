@@ -118,8 +118,12 @@ def restore_session(
         system_prompt = _build_system_prompt(user_id) if user_id else ORCHESTRATOR
     restored = [{"role": "system", "content": system_prompt}]
     for msg in messages:
-        if msg.get("role") in ("user", "assistant") and msg.get("content"):
-            restored.append({"role": msg["role"], "content": msg["content"]})
+        if msg.get("role") not in ("user", "assistant") or not msg.get("content"):
+            continue
+        entry: dict = {"role": msg["role"], "content": msg["content"]}
+        if msg["role"] == "user" and msg.get("attachments"):
+            entry["attachments"] = msg["attachments"]
+        restored.append(entry)
     redis_client.set(
         _session_key(session_id),
         json.dumps(restored),

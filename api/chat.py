@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from functions import tool_policies
 from functions.tool_router import execute_tool_call
-from pipeline.chat_attachments import build_user_content
+from pipeline.chat_attachments import prepare_messages_for_llm
 from utils.streaming import iter_response, ToolCallProxy
 from utils.tool_planner import plan_tool_calls
 from utils.summarizer import summarize_messages
@@ -30,7 +30,7 @@ from tasks.memory_tasks import invalidate_session_memory_cursor
 
 logger = logging.getLogger("api.chat")
 
-MAX_PROMPT_TOKENS = 5000
+MAX_PROMPT_TOKENS = 40000
 MAX_REASONING_STEPS = 3
 MAX_TOTAL_TOOL_CALLS = 6
 MAX_PARALLEL_CALLS_PER_STEP = 3
@@ -187,20 +187,18 @@ def chat_stream(session_id: str, user_message: str, attachments: list[dict] | No
 
         messages = get_messages(session_id)
         attachments = attachments or []
-        # Redis history stays plain-text. The frontend is the source of truth
-        # for which attachments belong in this turn (it resends prior session
-        # attachments along with any new ones), so we don't need to preserve
-        # them in Redis or hydrate from history.
-        user_msg_index = len(messages)
-        messages.append({"role": "user", "content": user_message})
+        # Persist attachment refs (not resolved bytes) on the user message in
+        # Redis so each historical turn keeps its own attachments. The LLM
+        # payload is built fresh each turn by resolving refs per-message —
+        # this keeps the conversation flow accurate and lets the summarizer
+        # reason about plain text without losing file context.
+        user_msg: dict = {"role": "user", "content": user_message}
+        if attachments:
+            user_msg["attachments"] = attachments
+        messages.append(user_msg)
 
         def messages_for_llm() -> list[dict]:
-            if not attachments:
-                return messages
-            multimodal = build_user_content(user_message, attachments)
-            cloned = list(messages)
-            cloned[user_msg_index] = {"role": "user", "content": multimodal}
-            return cloned
+            return prepare_messages_for_llm(messages)
 
         reasoning_step_count = 0
         total_tool_calls = 0
