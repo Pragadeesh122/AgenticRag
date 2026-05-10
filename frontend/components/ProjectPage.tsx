@@ -123,11 +123,18 @@ export default function ProjectPage({
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(
     null
   );
+  const streamAbortRef = useRef<AbortController | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<ProjectSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
   const loadedSessionsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    return () => {
+      streamAbortRef.current?.abort();
+    };
+  }, []);
 
   // Load agents on mount (project and sessions are already loaded via SSR)
   useEffect(() => {
@@ -150,6 +157,10 @@ export default function ProjectPage({
   const activeMessages: Message[] = activeSessionId
     ? messagesBySession[activeSessionId] ?? []
     : [];
+
+  const handleStop = useCallback(() => {
+    streamAbortRef.current?.abort();
+  }, []);
 
   // Poll processing documents
   useEffect(() => {
@@ -469,6 +480,8 @@ export default function ProjectPage({
     };
     updateMessages(currentSessionId, (prev) => [...prev, assistantMessage]);
     setStreamingMessageId(assistantId);
+    const abortController = new AbortController();
+    streamAbortRef.current = abortController;
 
     try {
       let finalContent = "";
@@ -572,6 +585,35 @@ export default function ProjectPage({
                       thinkingEntries: [
                         ...m.thinkingEntries,
                         {type: "tool" as const, toolCall: agentTool},
+                      ],
+                      thinkingStartedAt: m.thinkingStartedAt ?? Date.now(),
+                    }
+                  : m
+              )
+            );
+          } else if (event.type === "tool") {
+            const toolCall: ToolCall = {
+              id: generateLocalId(),
+              name: event.data.name,
+              args: event.data.args,
+              status: "running",
+            };
+            finalToolCalls = [...finalToolCalls, toolCall];
+            finalThinkingEntries = [
+              ...finalThinkingEntries,
+              {type: "tool" as const, toolCall},
+            ];
+            finalParts = appendToolCallPart(finalParts, toolCall);
+            updateMessages(currentSessionId, (prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      parts: appendToolCallPart(m.parts, toolCall),
+                      toolCalls: [...m.toolCalls, toolCall],
+                      thinkingEntries: [
+                        ...m.thinkingEntries,
+                        {type: "tool" as const, toolCall},
                       ],
                       thinkingStartedAt: m.thinkingStartedAt ?? Date.now(),
                     }
@@ -718,7 +760,8 @@ export default function ProjectPage({
             );
           }
         },
-        selectedAgent
+        selectedAgent,
+        abortController.signal
       );
 
       // Save messages to DB (persist agentName in metadata for session restore)
@@ -755,6 +798,31 @@ export default function ProjectPage({
         })
         .catch(console.error);
     } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        updateMessages(currentSessionId, (prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  parts: markRunningToolParts(m.parts, "error", "Cancelled"),
+                  toolCalls: m.toolCalls.map((t) =>
+                    t.status === "running" ? {...t, status: "error" as const} : t
+                  ),
+                  thinkingEntries: m.thinkingEntries.map((e) =>
+                    e.type === "tool" && e.toolCall.status === "running"
+                      ? {
+                          ...e,
+                          toolCall: {...e.toolCall, status: "error" as const},
+                        }
+                      : e
+                  ),
+                  status: {type: "incomplete", reason: "cancelled"},
+                }
+              : m
+          )
+        );
+        return;
+      }
       const message = err instanceof Error ? err.message : "Unknown error";
       updateMessages(currentSessionId, (prev) =>
         prev.map((m) =>
@@ -780,6 +848,9 @@ export default function ProjectPage({
         )
       );
     } finally {
+      if (streamAbortRef.current === abortController) {
+        streamAbortRef.current = null;
+      }
       setIsLoading(false);
       setStreamingMessageId(null);
     }
@@ -904,6 +975,7 @@ export default function ProjectPage({
               inputValue={inputValue}
               onInputChange={setInputValue}
               onSubmit={handleSubmit}
+              onStop={handleStop}
               projectId={projectId}
               projectDocuments={project.documents}
             />

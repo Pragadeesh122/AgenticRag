@@ -23,3 +23,8 @@ class Agent:
 
     # Extra instructions appended to the context block
     context_instructions: str = ""
+
+    # Tool names this agent is allowed to call. Empty list = single-shot
+    # answer with no tool loop. Names must match registered tools in
+    # `functions/` (e.g. "search", "crawl_website").
+    tool_names: list[str] = field(default_factory=list)

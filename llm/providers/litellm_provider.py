@@ -7,14 +7,20 @@ from typing import Any
 from llm.base import BaseLLMProvider
 
 try:
+    import litellm
     from litellm import completion as litellm_completion
     from litellm import embedding as litellm_embedding
 except Exception as e:  # pragma: no cover - import error path
+    litellm = None
     litellm_completion = None
     litellm_embedding = None
     _LITELLM_IMPORT_ERROR = e
 else:
     _LITELLM_IMPORT_ERROR = None
+    # Silently drop provider-rejected params (e.g. gpt-5 doesn't accept
+    # temperature=0). Without this, every router call raises
+    # UnsupportedParamsError and we silently fall back to "reasoning".
+    litellm.drop_params = True
 
 
 OPENAI_CHAT_MODEL_ALIASES = {

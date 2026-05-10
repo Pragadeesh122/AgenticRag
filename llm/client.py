@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import logging
 from typing import Any
 
 from llm.factory import LLMProviderRegistry
@@ -24,6 +25,7 @@ except Exception:  # pragma: no cover - import failure path
     token_counter = None
 
 _STREAM_USAGE_PROVIDERS = {"openai", "grok"}
+logger = logging.getLogger(__name__)
 
 
 def _field(obj: Any, key: str, default=None):
@@ -249,6 +251,7 @@ class _ChatCompletionsFacade:
             ended_at = started
             output_parts: list[str] = []
             _completed = False
+            _failed = False
             try:
                 for chunk in stream_obj:
                     ended_at = time.perf_counter()
@@ -269,6 +272,7 @@ class _ChatCompletionsFacade:
                     yield chunk
                 _completed = True
             except Exception:
+                _failed = True
                 observe_llm_outcome(
                     operation=operation,
                     provider=provider,
@@ -283,6 +287,25 @@ class _ChatCompletionsFacade:
                 # On normal completion, record usage while the span is still
                 # alive, then let span_ctx's finally close it.
                 # On error or abandonment, usage was already recorded above.
+                if not _completed:
+                    close_stream = getattr(stream_obj, "close", None)
+                    if callable(close_stream):
+                        try:
+                            close_stream()
+                        except Exception:
+                            logger.debug("failed to close abandoned LLM stream", exc_info=True)
+
+                if not _completed and not _failed:
+                    observe_llm_outcome(
+                        operation=operation,
+                        provider=provider,
+                        model=model,
+                        stream=True,
+                        status="cancelled",
+                        duration_seconds=time.perf_counter() - started,
+                    )
+                    record_llm_usage(span, usage=None, cost_usd=None, status="cancelled")
+
                 if _completed:
                     status = "success" if usage is not None else "usage_missing"
                     if usage is None:

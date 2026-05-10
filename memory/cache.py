@@ -81,21 +81,23 @@ def get_cached_result(tool_name: str, query: str) -> str | None:
             q, query_params={"vec": query_embedding}
         )
     except Exception as e:
-        logger.warning(f"redis search failed: {e}")
+        logger.warning(f"cache MISS  tool={tool_name} reason=redis-error err={e}")
         return None
 
-    logger.info(f"cache search returned {results.total} results for tool={tool_name}")
     if results.total == 0:
+        logger.info(f"cache MISS  tool={tool_name} reason=empty-index")
         return None
 
     doc = results.docs[0]
     # Redis COSINE distance = 1 - cosine_similarity, so similarity = 1 - distance
     similarity = 1 - float(doc.score)
-    logger.info(f"Similarity Score {similarity}")
     if similarity >= SIMILARITY_THRESHOLD:
-        logger.info(f"cache hit for {tool_name}: similarity={similarity:.3f}")
+        logger.info(f"cache HIT   tool={tool_name} sim={similarity:.3f}")
         return doc.result
 
+    logger.info(
+        f"cache MISS  tool={tool_name} sim={similarity:.3f} threshold={SIMILARITY_THRESHOLD}"
+    )
     return None
 
 
@@ -115,7 +117,7 @@ def cache_result(tool_name: str, query: str, result: str, ttl: int = DEFAULT_TTL
         },
     )
     cache_redis.expire(cache_key, ttl)
-    logger.info(f"cached result for {tool_name}: '{query[:50]}...' (ttl={ttl}s)")
+    logger.info(f"cache STORE tool={tool_name} ttl={ttl}s query='{query[:60]}'")
 
 
 def clear_cache(tool_name: str = None):

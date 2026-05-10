@@ -1,5 +1,6 @@
 import type {
   AssistantMessageStatus,
+  ChatAttachment,
   Message,
   MessageMetadata,
   MemoryFact,
@@ -151,7 +152,7 @@ export async function backendSessionExists(
 
 export async function restoreBackendSession(
   sessionId: string,
-  messages: Array<{role: string; content: string}>,
+  messages: Array<{role: string; content: string; attachments?: ChatAttachment[]}>,
   projectName?: string
 ): Promise<void> {
   const res = await apiFetch("/session/restore", {
@@ -184,16 +185,88 @@ export type SSEEvent =
       };
     };
 
+export const CHAT_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
+export const CHAT_ATTACHMENT_MAX_COUNT = 5;
+export const CHAT_ATTACHMENT_ALLOWED_MIME = new Set<string>([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "application/pdf",
+  "text/plain",
+  "text/markdown",
+  "text/csv",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
+export const CHAT_ATTACHMENT_ALLOWED_EXTS = new Set<string>([
+  "png", "jpg", "jpeg", "webp", "gif",
+  "pdf", "txt", "md", "csv", "docx",
+]);
+
+export function isAllowedChatAttachment(file: File): boolean {
+  if (CHAT_ATTACHMENT_ALLOWED_MIME.has(file.type)) return true;
+  const ext = file.name.includes(".")
+    ? file.name.split(".").pop()!.toLowerCase()
+    : "";
+  return CHAT_ATTACHMENT_ALLOWED_EXTS.has(ext);
+}
+
+export async function uploadChatAttachment(file: File): Promise<ChatAttachment> {
+  const initRes = await apiFetch("/api/chat/upload", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      filename: file.name,
+      fileSize: file.size,
+      mimeType: file.type,
+    }),
+  });
+  if (!initRes.ok) {
+    const err = await initRes.json().catch(() => ({error: "Upload failed"}));
+    throw new Error(err.detail || err.error || "Upload failed");
+  }
+  const data = await initRes.json();
+  const {uploadUrl, ...attachment} = data as ChatAttachment & {uploadUrl: string};
+
+  const putRes = await fetch(uploadUrl, {
+    method: "PUT",
+    mode: "cors",
+    body: file,
+  });
+  if (!putRes.ok) {
+    const detail = await putRes.text().catch(() => "");
+    throw new Error(
+      `Direct upload to storage failed (${putRes.status}): ${detail.slice(0, 300)}`
+    );
+  }
+
+  return attachment;
+}
+
+export async function getChatAttachmentUrl(storageKey: string): Promise<string> {
+  const res = await apiFetch(
+    `/api/chat/attachments/url?key=${encodeURIComponent(storageKey)}`
+  );
+  if (!res.ok) throw new Error("Failed to get attachment URL");
+  const data = await res.json();
+  return data.url;
+}
+
 export async function streamChat(
   sessionId: string,
   message: string,
   onEvent: (event: SSEEvent) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  attachments?: ChatAttachment[]
 ): Promise<void> {
   const res = await apiFetch("/api/chat/stream", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({sessionId, message}),
+    body: JSON.stringify({
+      sessionId,
+      message,
+      attachments: attachments ?? [],
+    }),
     signal,
   });
 
@@ -718,6 +791,12 @@ export async function streamProjectChat(
       } else if (eventType === "agent") {
         try {
           onEvent({type: "agent", data: JSON.parse(eventData)});
+        } catch {
+          // ignore
+        }
+      } else if (eventType === "tool") {
+        try {
+          onEvent({type: "tool", data: JSON.parse(eventData)});
         } catch {
           // ignore
         }

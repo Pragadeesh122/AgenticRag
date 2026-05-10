@@ -1,6 +1,6 @@
 "use client";
 
-import {useMemo, useState} from "react";
+import {useEffect, useMemo, useState} from "react";
 import {Streamdown} from "streamdown";
 import {code} from "@streamdown/code";
 import {ActionBarPrimitive} from "@assistant-ui/react";
@@ -12,11 +12,12 @@ import {FileText} from "@phosphor-icons/react/dist/ssr/FileText";
 import {ArrowSquareOut} from "@phosphor-icons/react/dist/ssr/ArrowSquareOut";
 import {SpinnerGap} from "@phosphor-icons/react/dist/ssr/SpinnerGap";
 import "streamdown/styles.css";
-import {getDocumentDownloadUrl} from "@/lib/api";
-import type {Message, ProjectDocument, RetrievalSource} from "@/lib/types";
+import {getChatAttachmentUrl, getDocumentDownloadUrl} from "@/lib/api";
+import type {ChatAttachment, Message, ProjectDocument, RetrievalSource} from "@/lib/types";
 import ThinkingBlock from "./ThinkingBlock";
 import QuizRenderer, {tryParseQuiz} from "./QuizRenderer";
 import ChartRenderer, {tryParseChart} from "./ChartRenderer";
+import AttachmentModal from "./AttachmentModal";
 
 const streamdownPlugins = {code};
 const streamdownThemes: ["github-light", "github-dark"] = ["github-light", "github-dark"];
@@ -59,6 +60,91 @@ const CopyButton = forwardRef<HTMLButtonElement, React.ComponentPropsWithoutRef<
   }
 );
 CopyButton.displayName = "CopyButton";
+
+// --- Attachment chips ---
+
+function isImageAttachment(att: ChatAttachment): boolean {
+  if (att.mimeType.startsWith("image/")) return true;
+  const ext = att.filename.includes(".")
+    ? att.filename.split(".").pop()!.toLowerCase()
+    : "";
+  return ["png", "jpg", "jpeg", "webp", "gif"].includes(ext);
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function AttachmentImageThumb({ storageKey, alt }: { storageKey: string; alt: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getChatAttachmentUrl(storageKey)
+      .then((u) => {
+        if (!cancelled) setUrl(u);
+      })
+      .catch(() => {
+        if (!cancelled) setUrl(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [storageKey]);
+  if (!url) {
+    return <div className="w-12 h-12 rounded-md bg-white/5 animate-pulse" aria-hidden="true" />;
+  }
+  // eslint-disable-next-line @next/next/no-img-element
+  return (
+    <img
+      src={url}
+      alt={alt}
+      className="w-12 h-12 rounded-md object-cover bg-black/30"
+    />
+  );
+}
+
+interface AttachmentChipsProps {
+  attachments: ChatAttachment[];
+  onOpen: (att: ChatAttachment) => void;
+}
+
+function AttachmentChips({ attachments, onOpen }: AttachmentChipsProps) {
+  if (attachments.length === 0) return null;
+  return (
+    <div className="flex flex-wrap justify-end gap-2 max-w-[80%]">
+      {attachments.map((att) => {
+        const isImg = isImageAttachment(att);
+        return (
+          <button
+            key={att.id}
+            type="button"
+            onClick={() => onOpen(att)}
+            aria-label={`Open ${att.filename}`}
+            className="group flex items-center gap-2 p-1 pr-2.5 rounded-xl bg-violet-600/10 border border-violet-500/15 hover:bg-violet-600/20 hover:border-violet-500/30 transition-colors"
+          >
+            {isImg ? (
+              <AttachmentImageThumb storageKey={att.storageKey} alt={att.filename} />
+            ) : (
+              <span className="flex items-center justify-center w-12 h-12 rounded-md bg-white/5 text-zinc-300">
+                <FileText size={20} aria-hidden="true" />
+              </span>
+            )}
+            <span className="flex flex-col items-start min-w-0">
+              <span className="text-xs font-medium text-zinc-100 max-w-[180px] truncate" title={att.filename}>
+                {att.filename}
+              </span>
+              <span className="text-[10px] text-zinc-500">
+                {formatBytes(att.fileSize)}
+              </span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 // --- Message Bubble ---
 
@@ -107,6 +193,12 @@ export default function MessageBubble({
   const isUser = message.role === "user";
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [openingSourceKey, setOpeningSourceKey] = useState<string | null>(null);
+  const [openAttachment, setOpenAttachment] = useState<ChatAttachment | null>(null);
+
+  const messageAttachments = useMemo(() => {
+    if (!isUser) return [];
+    return message.attachments ?? message.metadata?.attachments ?? [];
+  }, [isUser, message.attachments, message.metadata]);
 
   const isStructuredAgent =
     !isUser &&
@@ -177,6 +269,11 @@ export default function MessageBubble({
           startedAt={message.thinkingStartedAt}
           duration={message.thinkingDuration}
         />
+      )}
+
+      {/* User attachments */}
+      {isUser && messageAttachments.length > 0 && (
+        <AttachmentChips attachments={messageAttachments} onOpen={setOpenAttachment} />
       )}
 
       {/* Message content */}
@@ -334,6 +431,11 @@ export default function MessageBubble({
             />
           </div>
         )}
+
+      <AttachmentModal
+        attachment={openAttachment}
+        onClose={() => setOpenAttachment(null)}
+      />
     </div>
   );
 }

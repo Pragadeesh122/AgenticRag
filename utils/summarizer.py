@@ -42,7 +42,7 @@ def summarize_messages(messages):
             getattr(summary_response, "usage", None) or {}
         )
         logger.info(
-            f"summary tokens: {prompt_tokens} in, {completion_tokens} out"
+            f"llm  call=summary tokens_in={prompt_tokens} tokens_out={completion_tokens}"
         )
 
         return [

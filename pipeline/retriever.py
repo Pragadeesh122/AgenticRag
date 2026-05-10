@@ -47,12 +47,9 @@ def retrieve(
         span_name="retrieval.pipeline",
         **{"retrieval.top_k": top_k, "retrieval.alpha": alpha},
     ) as span:
-        # Check retrieval cache first
+        # Check retrieval cache first (cache module logs the hit/miss itself)
         cached = get_cached_retrieval(project_id, query)
         if cached is not None:
-            logger.info(
-                f"using cached retrieval for project '{project_id}' ({len(cached)} results)"
-            )
             if span is not None:
                 span.set_attribute("cache.hit", True)
                 span.set_attribute("result_count", len(cached))

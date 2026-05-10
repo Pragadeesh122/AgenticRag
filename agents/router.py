@@ -15,20 +15,44 @@ logger = logging.getLogger("agents.router")
 CLASSIFICATION_MODEL = os.getenv("ORCHESTRATOR_MODEL", "gpt-5.4")
 
 CLASSIFICATION_PROMPT = """\
-You are an intent classifier for a document Q&A system. Based on the conversation, \
-decide which agent should handle the user's latest message.
+You are an intent classifier for a document Q&A system. Pick exactly one agent \
+that should handle the user's LATEST message, based on the full conversation.
 
-Available agents:
-- reasoning: Deep analysis, Q&A, comparisons, explaining concepts
-- quiz: Generating quizzes, test questions, flashcards
-- visualization: Charts, diagrams, visual comparisons, data visualization
-- summary: Summarizing documents, key takeaways, overviews
+Agents (mutually exclusive — pick the single best match):
+- reasoning: Default. Deep Q&A, explanations, multi-hop analysis, comparisons in prose, \
+  follow-up discussion, "what / why / how / which / does / is" style questions, \
+  and anything that needs web/external lookup.
+- quiz: User explicitly asks for a quiz, flashcards, test questions, MCQs, or "quiz me".
+- visualization: User asks for a chart, graph, diagram, flowchart, mindmap, timeline, \
+  table, mermaid, "visualize", "draw", "plot", "show me a diagram".
+- summary: User asks for a summary, TL;DR, overview, key takeaways, "summarize this".
 
-If the user is continuing a previous task (e.g. "one more", "again", "next"), \
-keep the same agent. Only switch when the intent clearly changes.
+Disambiguation rules:
+- "Compare X and Y in detail" → reasoning. "Compare X and Y as a chart/table" → visualization.
+- "List the key points" → summary. "Explain the key points" → reasoning.
+- "Make 5 questions" / "test me" → quiz, even without the word "quiz".
+- "Give me a flowchart of …" / "draw …" → visualization, even without the word "chart".
+- Continuation cues ("one more", "again", "next", "another one", "do that for X too") \
+  keep the SAME agent as the previous assistant turn.
+- If the user explicitly requests a different format ("now show as a chart", "make this \
+  a quiz instead"), SWITCH to that agent.
+- If the message is ambiguous or conversational ("ok thanks", "yes", "hmm"), keep the \
+  previous agent; if no previous agent exists, return reasoning.
 
-Respond with ONLY the agent name (one word). Default to "reasoning" if unclear.\
+Output format:
+- Respond with EXACTLY one lowercase word: reasoning | quiz | visualization | summary
+- No punctuation, no quotes, no explanation.\
 """
+
+_VALID_AGENT_NAMES = {"reasoning", "quiz", "visualization", "summary"}
+
+
+def _normalize_classification(raw: str) -> str:
+    """Strip punctuation/quoting/whitespace so models that output `"quiz."` still match."""
+    cleaned = raw.strip().lower().strip("\"'`. ,\n\t")
+    # Keep only the first token in case the model adds explanation
+    cleaned = cleaned.split()[0] if cleaned else ""
+    return cleaned
 
 
 def classify_intent(messages: list[dict]) -> tuple[str, str]:
@@ -45,19 +69,25 @@ def classify_intent(messages: list[dict]) -> tuple[str, str]:
                         "content": msg["content"][:300],
                     })
 
+            # NOTE: do NOT pass temperature here. gpt-5* models reject any
+            # value other than the default (1) and litellm raises
+            # UnsupportedParamsError. The classifier prompt + max_tokens=10
+            # already keep the output deterministic in practice.
             response = llm_client.chat.completions.create(
                 model=CLASSIFICATION_MODEL,
                 messages=classification_messages,
                 max_completion_tokens=10,
-                temperature=0,
             )
-            agent_name = extract_first_text(response, "").strip().lower()
+            raw = extract_first_text(response, "")
+            agent_name = _normalize_classification(raw)
 
-            if agent_name in AGENTS:
+            if agent_name in AGENTS and agent_name in _VALID_AGENT_NAMES:
                 logger.info(f"classified intent → {agent_name}")
                 return agent_name, "success"
 
-            logger.warning(f"unknown agent '{agent_name}', falling back to reasoning")
+            logger.warning(
+                f"unknown agent '{raw!r}' (normalized '{agent_name}'), falling back to reasoning"
+            )
             return "reasoning", "fallback"
 
         except Exception as e:

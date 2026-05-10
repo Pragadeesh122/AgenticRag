@@ -75,7 +75,7 @@ def search(query: str) -> str:
             }
         )
 
-    logger.info(f"brave search: '{query}' → {len(results)} results")
+    logger.info(f"brave-search results={len(results)} query='{query[:80]}'")
 
     if not results:
         return f"No search results found for: '{query}'"
@@ -94,7 +94,9 @@ def search(query: str) -> str:
             getattr(llm_response, "usage", None) or {}
         )
 
-        logger.info(f"summarize: {prompt_tokens} in, {completion_tokens} out")
+        logger.info(
+            f"llm  call=search-summarize tokens_in={prompt_tokens} tokens_out={completion_tokens}"
+        )
         return extract_first_text(llm_response, "")
     except Exception as e:
         logger.error(f"summarization failed: {e}")

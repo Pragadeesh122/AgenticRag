@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from functions import tool_policies
 from functions.tool_router import execute_tool_call
+from pipeline.chat_attachments import build_user_content
 from utils.streaming import iter_response, ToolCallProxy
 from utils.tool_planner import plan_tool_calls
 from utils.summarizer import summarize_messages
@@ -103,7 +104,7 @@ def _execute_planned_calls(selected_calls, mode: str):
     return [(planned, result) for planned, _, result in ordered_results]
 
 
-def _stream_no_tool_response(messages: list[dict], guidance: str):
+def _stream_no_tool_response(messages: list[dict], guidance: str, build_llm_messages=None):
     guidance_msg = {
         "role": "system",
         "content": guidance,
@@ -113,7 +114,8 @@ def _stream_no_tool_response(messages: list[dict], guidance: str):
         content = ""
         final_tool_calls = None
         usage = None
-        gen = iter_response(messages, use_tools=False)
+        llm_msgs = build_llm_messages() if build_llm_messages else messages
+        gen = iter_response(llm_msgs, use_tools=False)
         try:
             while True:
                 token = next(gen)
@@ -127,9 +129,9 @@ def _stream_no_tool_response(messages: list[dict], guidance: str):
             messages.remove(guidance_msg)
 
 
-def _force_final_answer(messages: list[dict], guidance: str):
+def _force_final_answer(messages: list[dict], guidance: str, build_llm_messages=None):
     content, final_tool_calls, usage = yield from _stream_no_tool_response(
-        messages, guidance
+        messages, guidance, build_llm_messages
     )
 
     if (not (content or "").strip()) or final_tool_calls:
@@ -143,6 +145,7 @@ def _force_final_answer(messages: list[dict], guidance: str):
                 "Do not call tools. Provide your best final answer using only the "
                 "existing tool outputs and conversation context."
             ),
+            build_llm_messages,
         )
 
     if not (content or "").strip():
@@ -156,7 +159,7 @@ def _force_final_answer(messages: list[dict], guidance: str):
     return content, usage
 
 
-def chat_stream(session_id: str, user_message: str):
+def chat_stream(session_id: str, user_message: str, attachments: list[dict] | None = None):
     """Generator that yields SSE-formatted events for a single user turn.
 
     Event types:
@@ -183,7 +186,21 @@ def chat_stream(session_id: str, user_message: str):
         )
 
         messages = get_messages(session_id)
+        attachments = attachments or []
+        # Redis history stays plain-text. The frontend is the source of truth
+        # for which attachments belong in this turn (it resends prior session
+        # attachments along with any new ones), so we don't need to preserve
+        # them in Redis or hydrate from history.
+        user_msg_index = len(messages)
         messages.append({"role": "user", "content": user_message})
+
+        def messages_for_llm() -> list[dict]:
+            if not attachments:
+                return messages
+            multimodal = build_user_content(user_message, attachments)
+            cloned = list(messages)
+            cloned[user_msg_index] = {"role": "user", "content": multimodal}
+            return cloned
 
         reasoning_step_count = 0
         total_tool_calls = 0
@@ -199,7 +216,7 @@ def chat_stream(session_id: str, user_message: str):
                 tool_calls = None
                 usage = None
 
-                gen = iter_response(messages)
+                gen = iter_response(messages_for_llm())
                 try:
                     while True:
                         token = next(gen)
@@ -230,6 +247,7 @@ def chat_stream(session_id: str, user_message: str):
                             "use tools. Do not call more tools. Respond with the best answer "
                             "you can based on the information already gathered."
                         ),
+                        messages_for_llm,
                     )
                     if usage:
                         prompt_tokens, _ = usage_tokens(usage)
@@ -250,6 +268,7 @@ def chat_stream(session_id: str, user_message: str):
                             "attempt any more tool calls. Respond with the best answer "
                             "you can based on the information gathered."
                         ),
+                        messages_for_llm,
                     )
                     if usage:
                         prompt_tokens, _ = usage_tokens(usage)
@@ -285,6 +304,7 @@ def chat_stream(session_id: str, user_message: str):
                             "tool evidence was available. Do not repeat the same tool call. "
                             "Provide your best final answer using the existing tool outputs."
                         ),
+                        messages_for_llm,
                     )
                     if usage:
                         prompt_tokens, _ = usage_tokens(usage)
@@ -302,6 +322,7 @@ def chat_stream(session_id: str, user_message: str):
                             "The remaining tool budget is exhausted. Do not call more tools. "
                             "Provide your best final answer using the information already gathered."
                         ),
+                        messages_for_llm,
                     )
                     if usage:
                         prompt_tokens, _ = usage_tokens(usage)

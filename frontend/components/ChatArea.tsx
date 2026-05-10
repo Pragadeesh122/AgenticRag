@@ -7,7 +7,7 @@ import { Table } from '@phosphor-icons/react/dist/ssr/Table';
 import { Compass } from '@phosphor-icons/react/dist/ssr/Compass';
 import { Sparkle } from '@phosphor-icons/react/dist/ssr/Sparkle';
 import { ThreadPrimitive } from '@assistant-ui/react';
-import type { Message, ProjectDocument } from '@/lib/types';
+import type { ChatAttachment, Message, ProjectDocument } from '@/lib/types';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
 
@@ -92,6 +92,8 @@ interface ChatAreaProps {
   onStop?: () => void;
   projectId?: string;
   projectDocuments?: ProjectDocument[];
+  attachments?: ChatAttachment[];
+  onAttachmentsChange?: (next: ChatAttachment[]) => void;
 }
 
 export default function ChatArea({
@@ -105,6 +107,8 @@ export default function ChatArea({
   onStop,
   projectId,
   projectDocuments,
+  attachments,
+  onAttachmentsChange,
 }: ChatAreaProps) {
   const inputRef = useRef<HTMLDivElement>(null);
 
@@ -314,6 +318,8 @@ export default function ChatArea({
             onStop={onStop}
             isStreaming={isStreaming}
             disabled={isLoading && !isStreaming}
+            attachments={attachments}
+            onAttachmentsChange={onAttachmentsChange}
           />
         </div>
       </div>

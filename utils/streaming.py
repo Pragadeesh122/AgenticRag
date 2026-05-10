@@ -47,13 +47,16 @@ def _has_tool_history(messages):
     return False
 
 
-def stream_response(messages, model=None, use_tools=True):
+def stream_response(messages, model=None, use_tools=True, tools_override=None):
     """Stream an LLM response, printing text tokens as they arrive.
 
     Returns (content, tool_calls, usage) where:
     - content: full text response (or None if tool calls)
     - tool_calls: list of tool call objects (or None if text)
     - usage: token usage dict
+
+    `tools_override` (when provided) replaces the global tool list — used by
+    agent-scoped orchestrators that expose only a subset of tools.
     """
     resolved_model = model or ORCHESTRATOR_MODEL
     kwargs = {
@@ -63,7 +66,14 @@ def stream_response(messages, model=None, use_tools=True):
     }
     if _provider_for_model(resolved_model) in _STREAM_USAGE_PROVIDERS:
         kwargs["stream_options"] = {"include_usage": True}
-    if use_tools:
+    if tools_override is not None:
+        if tools_override:
+            kwargs["tools"] = tools_override
+        elif _provider_for_model(resolved_model) == "anthropic" and _has_tool_history(
+            messages
+        ):
+            kwargs["tools"] = []
+    elif use_tools:
         kwargs["tools"] = tools
     elif _provider_for_model(resolved_model) == "anthropic" and _has_tool_history(
         messages
@@ -125,7 +135,9 @@ def stream_response(messages, model=None, use_tools=True):
     if usage:
         prompt_tokens = _field(usage, "prompt_tokens", 0)
         completion_tokens = _field(usage, "completion_tokens", 0)
-        logger.info(f"tokens: {prompt_tokens} in, {completion_tokens} out")
+        logger.info(
+            f"llm  model={resolved_model} tokens_in={prompt_tokens} tokens_out={completion_tokens}"
+        )
 
     # Build tool_calls list sorted by index
     if tool_calls_by_index:
@@ -135,7 +147,7 @@ def stream_response(messages, model=None, use_tools=True):
     return content, None, usage
 
 
-def iter_response(messages, model=None, use_tools=True):
+def iter_response(messages, model=None, use_tools=True, tools_override=None):
     """Yield text tokens as they arrive, then return tool_calls and usage.
 
     Yields:
@@ -143,6 +155,9 @@ def iter_response(messages, model=None, use_tools=True):
 
     Returns via generator .value (use wrapper to capture):
         (content, tool_calls, usage)
+
+    `tools_override` (when provided) replaces the global tool list — used by
+    agent-scoped orchestrators that expose only a subset of tools.
     """
     resolved_model = model or ORCHESTRATOR_MODEL
     kwargs = {
@@ -152,7 +167,14 @@ def iter_response(messages, model=None, use_tools=True):
     }
     if _provider_for_model(resolved_model) in _STREAM_USAGE_PROVIDERS:
         kwargs["stream_options"] = {"include_usage": True}
-    if use_tools:
+    if tools_override is not None:
+        if tools_override:
+            kwargs["tools"] = tools_override
+        elif _provider_for_model(resolved_model) == "anthropic" and _has_tool_history(
+            messages
+        ):
+            kwargs["tools"] = []
+    elif use_tools:
         kwargs["tools"] = tools
     elif _provider_for_model(resolved_model) == "anthropic" and _has_tool_history(
         messages
@@ -166,47 +188,57 @@ def iter_response(messages, model=None, use_tools=True):
     tool_calls_by_index = {}
     usage = None
 
-    for chunk in stream:
-        chunk_usage = _extract_usage(chunk)
-        if chunk_usage:
-            usage = chunk_usage
+    try:
+        for chunk in stream:
+            chunk_usage = _extract_usage(chunk)
+            if chunk_usage:
+                usage = chunk_usage
 
-        delta = _extract_delta(chunk)
-        if not delta:
-            continue
+            delta = _extract_delta(chunk)
+            if not delta:
+                continue
 
-        delta_content = _field(delta, "content", None)
-        if delta_content:
-            yield delta_content
-            content += delta_content
+            delta_content = _field(delta, "content", None)
+            if delta_content:
+                yield delta_content
+                content += delta_content
 
-        delta_tool_calls = _field(delta, "tool_calls", None)
-        if delta_tool_calls:
-            for tc_delta in delta_tool_calls:
-                idx = _field(tc_delta, "index", 0)
-                if idx not in tool_calls_by_index:
-                    tool_calls_by_index[idx] = {
-                        "id": _field(tc_delta, "id", "") or "",
-                        "type": "function",
-                        "function": {"name": "", "arguments": ""},
-                    }
-                tc = tool_calls_by_index[idx]
-                tc_id = _field(tc_delta, "id", None)
-                if tc_id:
-                    tc["id"] = tc_id
-                tc_function = _field(tc_delta, "function", None)
-                if tc_function:
-                    fn_name = _field(tc_function, "name", "")
-                    fn_arguments = _field(tc_function, "arguments", "")
-                    if fn_name:
-                        tc["function"]["name"] += fn_name
-                    if fn_arguments:
-                        tc["function"]["arguments"] += fn_arguments
+            delta_tool_calls = _field(delta, "tool_calls", None)
+            if delta_tool_calls:
+                for tc_delta in delta_tool_calls:
+                    idx = _field(tc_delta, "index", 0)
+                    if idx not in tool_calls_by_index:
+                        tool_calls_by_index[idx] = {
+                            "id": _field(tc_delta, "id", "") or "",
+                            "type": "function",
+                            "function": {"name": "", "arguments": ""},
+                        }
+                    tc = tool_calls_by_index[idx]
+                    tc_id = _field(tc_delta, "id", None)
+                    if tc_id:
+                        tc["id"] = tc_id
+                    tc_function = _field(tc_delta, "function", None)
+                    if tc_function:
+                        fn_name = _field(tc_function, "name", "")
+                        fn_arguments = _field(tc_function, "arguments", "")
+                        if fn_name:
+                            tc["function"]["name"] += fn_name
+                        if fn_arguments:
+                            tc["function"]["arguments"] += fn_arguments
+    finally:
+        close_stream = getattr(stream, "close", None)
+        if callable(close_stream):
+            try:
+                close_stream()
+            except Exception:
+                logger.debug("failed to close LLM stream", exc_info=True)
 
     if usage:
         prompt_tokens = _field(usage, "prompt_tokens", 0)
         completion_tokens = _field(usage, "completion_tokens", 0)
-        logger.info(f"tokens: {prompt_tokens} in, {completion_tokens} out")
+        logger.info(
+            f"llm  model={resolved_model} tokens_in={prompt_tokens} tokens_out={completion_tokens}"
+        )
 
     tool_calls = None
     if tool_calls_by_index:

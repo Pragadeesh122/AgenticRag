@@ -22,9 +22,18 @@ export type ThinkingEntry =
   | { type: 'text'; content: string }
   | { type: 'tool'; toolCall: ToolCall };
 
+export interface ChatAttachment {
+  id: string;
+  filename: string;
+  mimeType: string;
+  fileSize: number;
+  storageKey: string;
+}
+
 export interface MessageMetadata {
   agentName?: string;
   quizState?: Record<number, { selected: string | null; revealed: boolean; shortAnswer: string }>;
+  attachments?: ChatAttachment[];
 }
 
 export type AssistantMessageStatus =
@@ -68,6 +77,7 @@ export interface Message {
   thinkingStartedAt?: number;
   thinkingDuration?: number;
   metadata: MessageMetadata;
+  attachments?: ChatAttachment[];
   createdAt: string; // ISO string from DB
   agentName?: string; // set during streaming, persisted in metadata
   dbId?: string; // actual database id replaced after streaming completes

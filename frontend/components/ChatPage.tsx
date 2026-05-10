@@ -35,7 +35,7 @@ import {
   getDefaultAssistantStatus,
   markRunningToolParts,
 } from "@/lib/messageParts";
-import type {Session, Message, ToolCall, ThinkingEntry, Project, RetrievalSource, User} from "@/lib/types";
+import type {Session, Message, ToolCall, ThinkingEntry, Project, RetrievalSource, User, ChatAttachment} from "@/lib/types";
 
 interface ChatPageProps {
   initialSessions?: Session[];
@@ -94,10 +94,18 @@ export default function ChatPage({
     Record<string, Message[]>
   >({});
   const [inputValue, setInputValue] = useState("");
+  const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(
     null
   );
+  const streamAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      streamAbortRef.current?.abort();
+    };
+  }, []);
 
   // Track which sessions have had their messages loaded from DB
   const loadedSessionsRef = useRef<Set<string>>(new Set());
@@ -145,6 +153,7 @@ export default function ChatPage({
       loadedSessionsRef.current.add(newSession.id);
       setActiveSessionId(newSession.id);
       setInputValue("");
+      setPendingAttachments([]);
     } catch (err) {
       console.error("Failed to create session:", err);
     }
@@ -153,6 +162,7 @@ export default function ChatPage({
   const handleSelectSession = useCallback((id: string) => {
     setActiveSessionId(id);
     setInputValue("");
+    setPendingAttachments([]);
   }, []);
 
   const handleDeleteSession = useCallback(
@@ -233,9 +243,15 @@ export default function ChatPage({
     signOut();
   }, []);
 
+  const handleStop = useCallback(() => {
+    streamAbortRef.current?.abort();
+  }, []);
+
   const handleSubmit = useCallback(async () => {
     const content = inputValue.trim();
     if (!content || isLoading) return;
+
+    const submittedAttachments = pendingAttachments;
 
     let sessionId = activeSessionId;
 
@@ -257,6 +273,25 @@ export default function ChatPage({
     const currentSessionId = sessionId;
     const persistedMessages = messagesBySession[currentSessionId] ?? [];
     const isFirstTurn = persistedMessages.length === 0;
+
+    // Postgres is the source of truth for attachments: collect every
+    // attachment across prior user messages, then resend them together with
+    // any new ones so the LLM always has the full file context for this turn.
+    const priorSessionAttachments: ChatAttachment[] = [];
+    const seenAttachmentIds = new Set<string>();
+    for (const msg of persistedMessages) {
+      if (msg.role !== "user") continue;
+      const atts = msg.attachments ?? msg.metadata?.attachments ?? [];
+      for (const att of atts) {
+        if (seenAttachmentIds.has(att.id)) continue;
+        seenAttachmentIds.add(att.id);
+        priorSessionAttachments.push(att);
+      }
+    }
+    const llmContextAttachments: ChatAttachment[] = [
+      ...priorSessionAttachments,
+      ...submittedAttachments.filter((a) => !seenAttachmentIds.has(a.id)),
+    ];
 
     let backendSessionId =
       sessions.find((s) => s.id === currentSessionId)?.backendSessionId ??
@@ -282,6 +317,10 @@ export default function ChatPage({
           persistedMessages.map((message) => ({
             role: message.role,
             content: message.content,
+            attachments:
+              message.role === "user"
+                ? message.metadata?.attachments ?? message.attachments
+                : undefined,
           }))
         );
       }
@@ -296,12 +335,14 @@ export default function ChatPage({
       toolCalls: [],
       thinkingEntries: [],
       sources: [],
-      metadata: {},
+      metadata: submittedAttachments.length > 0 ? { attachments: submittedAttachments } : {},
+      attachments: submittedAttachments.length > 0 ? submittedAttachments : undefined,
       createdAt: new Date().toISOString(),
     };
     updateMessages(currentSessionId, (prev) => [...prev, userMessage]);
 
     setInputValue("");
+    setPendingAttachments([]);
     setIsLoading(true);
 
     // Add assistant placeholder
@@ -320,6 +361,8 @@ export default function ChatPage({
     };
     updateMessages(currentSessionId, (prev) => [...prev, assistantMessage]);
     setStreamingMessageId(assistantId);
+    const abortController = new AbortController();
+    streamAbortRef.current = abortController;
 
     try {
       // Accumulate final content for DB save
@@ -493,12 +536,21 @@ export default function ChatPage({
             )
           );
         }
-      });
+      }, abortController.signal, llmContextAttachments);
 
       // Save both messages to DB after streaming completes
       // Replace local IDs with DB IDs so metadata PATCH works
       saveMessages(currentSessionId, [
-        {role: "user", content, parts: [{ type: "text", text: content }], toolCalls: []},
+        {
+          role: "user",
+          content,
+          parts: [{ type: "text", text: content }],
+          toolCalls: [],
+          metadata:
+            submittedAttachments.length > 0
+              ? { attachments: submittedAttachments }
+              : undefined,
+        },
         {
           role: "assistant",
           content: finalContent,
@@ -520,6 +572,28 @@ export default function ChatPage({
         }
       }).catch(console.error);
     } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        updateMessages(currentSessionId, (prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  parts: markRunningToolParts(m.parts, "error", "Cancelled"),
+                  toolCalls: m.toolCalls.map((t) =>
+                    t.status === "running" ? {...t, status: "error" as const} : t
+                  ),
+                  thinkingEntries: m.thinkingEntries.map((e) =>
+                    e.type === "tool" && e.toolCall.status === "running"
+                      ? { ...e, toolCall: { ...e.toolCall, status: "error" as const } }
+                      : e
+                  ),
+                  status: { type: "incomplete", reason: "cancelled" },
+                }
+              : m
+          )
+        );
+        return;
+      }
       const message =
         err instanceof Error ? err.message : "Unknown error occurred";
       updateMessages(currentSessionId, (prev) =>
@@ -543,10 +617,13 @@ export default function ChatPage({
         )
       );
     } finally {
+      if (streamAbortRef.current === abortController) {
+        streamAbortRef.current = null;
+      }
       setIsLoading(false);
       setStreamingMessageId(null);
     }
-  }, [inputValue, isLoading, activeSessionId, sessions, messagesBySession, updateMessages, ensureSessionTitle]);
+  }, [inputValue, pendingAttachments, isLoading, activeSessionId, sessions, messagesBySession, updateMessages, ensureSessionTitle]);
 
   // ─── assistant-ui ExternalStoreRuntime ───
   // Bridge our message state to assistant-ui's runtime so its primitives
@@ -647,6 +724,9 @@ export default function ChatPage({
               inputValue={inputValue}
               onInputChange={setInputValue}
               onSubmit={handleSubmit}
+              onStop={handleStop}
+              attachments={pendingAttachments}
+              onAttachmentsChange={setPendingAttachments}
             />
           </div>
         </AssistantRuntimeProvider>

@@ -45,7 +45,7 @@ def execute_tool_call(tool_call) -> dict:
                 "content": json.dumps({"error": f"Unknown tool: {name}"}),
             }
 
-        # Check cache for similar queries
+        # Check cache for similar queries (the cache module logs HIT/MISS itself)
         query_str = args.get("query", "")
         if name in cacheable_tools and query_str:
             cached = get_cached_result(name, query_str)
@@ -59,6 +59,7 @@ def execute_tool_call(tool_call) -> dict:
                 if span is not None:
                     span.set_attribute("tool.cache_status", "hit")
                     span.set_attribute("status", "success")
+                logger.info(f"tool {name} -> served from cache")
                 return {
                     "role": "tool",
                     "tool_call_id": tool_call.id,
@@ -72,7 +73,7 @@ def execute_tool_call(tool_call) -> dict:
             if span is not None:
                 span.set_attribute("tool.cache_status", "skip")
 
-        logger.info(f"executing: {name}({args})")
+        logger.info(f"tool {name} executing args={args}")
         try:
             result = available_functions[name](**args)
             result_str = json.dumps(result)

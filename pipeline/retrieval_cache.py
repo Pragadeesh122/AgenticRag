@@ -99,12 +99,17 @@ def get_cached_retrieval(project_id: str, query: str) -> list[dict] | None:
                 q, query_params={"vec": query_embedding}
             )
         except Exception as e:
-            logger.warning(f"retrieval cache search failed: {e}")
+            logger.warning(
+                f"retrieval cache MISS  project={project_id} reason=redis-error err={e}"
+            )
             if span is not None:
                 span.set_attribute("cache.hit", False)
             return None
 
         if search_results.total == 0:
+            logger.info(
+                f"retrieval cache MISS  project={project_id} reason=empty-index"
+            )
             if span is not None:
                 span.set_attribute("cache.hit", False)
             return None
@@ -116,11 +121,17 @@ def get_cached_retrieval(project_id: str, query: str) -> list[dict] | None:
             span.set_attribute("similarity", similarity)
 
         if similarity >= SIMILARITY_THRESHOLD:
-            logger.info(f"retrieval cache hit: project={project_id}, similarity={similarity:.3f}")
+            logger.info(
+                f"retrieval cache HIT   project={project_id} sim={similarity:.3f}"
+            )
             if span is not None:
                 span.set_attribute("cache.hit", True)
             return json.loads(doc.results)
 
+        logger.info(
+            f"retrieval cache MISS  project={project_id} sim={similarity:.3f} "
+            f"threshold={SIMILARITY_THRESHOLD}"
+        )
         if span is not None:
             span.set_attribute("cache.hit", False)
         return None
@@ -142,7 +153,10 @@ def cache_retrieval(project_id: str, query: str, results: list[dict], ttl: int =
         },
     )
     redis_client.expire(cache_key, ttl)
-    logger.info(f"cached retrieval: project={project_id}, query='{query[:50]}...' ({len(results)} results, ttl={ttl}s)")
+    logger.info(
+        f"retrieval cache STORE project={project_id} ttl={ttl}s "
+        f"results={len(results)} query='{query[:60]}'"
+    )
 
 
 def invalidate_project_cache(project_id: str):
