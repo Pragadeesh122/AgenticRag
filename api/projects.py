@@ -119,7 +119,7 @@ async def create_project(
 
 # Ensure /agents is declared BEFORE /{project_id}
 @router.get("/agents")
-def list_agents():
+def list_agents(user: User = Depends(current_active_user)):
     return [
         {
             "name": agent.name,

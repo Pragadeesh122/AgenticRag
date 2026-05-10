@@ -270,6 +270,9 @@ config:
   documentIngestMode: "worker"
   corsAllowedOrigins: "http://localhost:3000"
   corsAllowLocalhostRegex: "false"
+  # Auto-generated FastAPI docs (/docs, /redoc, /openapi.json). Off in prod
+  # to avoid leaking the API schema; flip to "true" only when needed.
+  enableApiDocs: "false"
   # Override the public frontend URL used for OAuth redirect URIs.
   # For local dev via SSH tunnel set this to http://localhost:3000.
   # Leave empty to auto-compute from ingress host (production).

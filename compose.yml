@@ -126,6 +126,7 @@ services:
       DOCUMENT_INGEST_MODE: worker
       OTEL_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
+      ENABLE_API_DOCS: "true"
     command: uv run uvicorn api.server:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - .:/app

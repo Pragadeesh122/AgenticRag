@@ -59,7 +59,15 @@ async def lifespan(app: FastAPI):
     redis_client.close()
 
 
-app = FastAPI(title="AgenticRAG", version="0.1.0", lifespan=lifespan)
+_DOCS_ENABLED = os.getenv("ENABLE_API_DOCS", "false").lower() == "true"
+app = FastAPI(
+    title="AgenticRAG",
+    version="0.1.0",
+    lifespan=lifespan,
+    docs_url="/docs" if _DOCS_ENABLED else None,
+    redoc_url="/redoc" if _DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if _DOCS_ENABLED else None,
+)
 
 setup_tracing(app)
 
@@ -192,7 +200,12 @@ app.include_router(chat_messages_router)
 
 
 @app.get("/metrics", include_in_schema=False)
-def metrics():
+def metrics(request: Request):
+    # Prometheus scrapes via the in-cluster Service (no proxy hop, no XFF
+    # header). Public requests come through Traefik which always sets
+    # X-Forwarded-For. Reject anything that came through the public ingress.
+    if request.headers.get("x-forwarded-for") or request.headers.get("x-real-ip"):
+        raise HTTPException(status_code=404)
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
