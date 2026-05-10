@@ -12,7 +12,7 @@ metadata:
     app.kubernetes.io/component: monitoring
     grafana_dashboard: "1"
   annotations:
-    grafana_folder: "AgenticRAG"
+    grafana_folder: "RunaxAI"
 data:
   # Dashboard JSON files are large. In practice, package them with:
   #   helm create ... && cp monitoring/grafana/provisioning/dashboards/*.json templates/monitoring/

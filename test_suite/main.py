@@ -20,7 +20,7 @@ from test_suite.report import print_summary, save_report
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Test the AgenticRag orchestrator")
+    parser = argparse.ArgumentParser(description="Test the RunaxAI orchestrator")
     parser.add_argument(
         "-k", "--filter", help="Only run predefined tests matching this string"
     )

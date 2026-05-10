@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
 
 _DOCS_ENABLED = os.getenv("ENABLE_API_DOCS", "false").lower() == "true"
 app = FastAPI(
-    title="AgenticRAG",
+    title="RunaxAI",
     version="0.1.0",
     lifespan=lifespan,
     docs_url="/docs" if _DOCS_ENABLED else None,

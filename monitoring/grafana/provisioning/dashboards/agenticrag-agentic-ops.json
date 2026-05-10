@@ -349,11 +349,11 @@
   "refresh": "30s",
   "schemaVersion": 39,
   "style": "dark",
-  "tags": ["agenticrag", "agentic-ops"],
+  "tags": ["agenticrag", "operations"],
   "templating": {"list": []},
   "time": {"from": "now-24h", "to": "now"},
   "timezone": "browser",
-  "title": "AgenticRAG - Agentic Ops",
+  "title": "RunaxAI - Operations",
   "uid": "agenticrag-ops-v1",
   "version": 2
 }

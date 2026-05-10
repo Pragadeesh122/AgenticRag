@@ -22,7 +22,7 @@ import { ChatTeardropDots } from '@phosphor-icons/react/dist/ssr/ChatTeardropDot
 import { MagnifyingGlass } from '@phosphor-icons/react/dist/ssr/MagnifyingGlass';
 import { X } from '@phosphor-icons/react/dist/ssr/X';
 import { ArrowSquareOut } from '@phosphor-icons/react/dist/ssr/ArrowSquareOut';
-import { AgenticLogo } from './ChatArea';
+import { RunaxLogo } from './ChatArea';
 import SidebarAccountFooter from './SidebarAccountFooter';
 import type { Project, AgentInfo, Session, ProjectSearchResult, User } from '@/lib/types';
 
@@ -158,7 +158,7 @@ export default function ProjectSidebar({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-7 h-7 rounded-lg bg-linear-to-br from-violet-600/30 to-purple-600/30 border border-violet-500/20 flex items-center justify-center shrink-0">
-              <AgenticLogo size={22} />
+              <RunaxLogo size={22} />
             </div>
             <span className="text-sm font-semibold text-zinc-200 tracking-tight truncate">
               {project.name}

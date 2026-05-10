@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# AgenticRAG API — production multi-stage build
+# RunaxAI API — production multi-stage build
 # ---------------------------------------------------------------------------
 FROM python:3.12-slim AS builder
 

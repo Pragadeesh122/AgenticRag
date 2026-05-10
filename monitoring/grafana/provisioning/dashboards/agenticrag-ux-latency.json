@@ -200,7 +200,7 @@
   "templating": {"list": []},
   "time": {"from": "now-24h", "to": "now"},
   "timezone": "browser",
-  "title": "AgenticRAG - UX & Latency",
+  "title": "RunaxAI - UX & Latency",
   "uid": "agenticrag-ux-v1",
   "version": 2
 }

@@ -3,7 +3,7 @@ apiVersion: 1
 groups:
   - orgId: 1
     name: agenticrag-observability
-    folder: AgenticRAG Alerts
+    folder: RunaxAI Alerts
     interval: 5m
     rules:
       - uid: ag_max_tool_calls_loop

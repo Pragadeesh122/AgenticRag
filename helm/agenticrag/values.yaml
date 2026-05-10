@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# AgenticRAG Helm Chart — values.yaml
+# RunaxAI Helm Chart — values.yaml
 # Defaults tuned for a single-node K3s deployment (Mac Mini)
 # ---------------------------------------------------------------------------
 

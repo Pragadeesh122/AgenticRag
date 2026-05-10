@@ -244,7 +244,7 @@ export default function AnimatedDemo() {
             className="text-[10px] font-semibold tracking-[0.12em] uppercase mb-2"
             style={{ color: "var(--color-lp-text-faint)" }}
           >
-            AgenticRAG
+            RunaxAI
           </p>
           <div className="text-sm leading-relaxed" style={{ color: "var(--color-lp-text-secondary)" }}>
             {renderText(streamedText)}

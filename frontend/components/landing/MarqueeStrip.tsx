@@ -4,7 +4,7 @@ const ITEMS = [
   "RAG Search",
   "SQL Queries",
   "Live Web Browsing",
-  "Agentic Reasoning",
+  "Autonomous Reasoning",
   "Real-time Streaming",
   "Multi-source Citations",
   "Document Analysis",

@@ -1,6 +1,6 @@
 # Chat Modes
 
-AgenticRAG has two distinct chat paths, each designed for a different interaction pattern.
+RunaxAI has two distinct chat paths, each designed for a different interaction pattern.
 
 ## General Chat
 

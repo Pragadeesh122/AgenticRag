@@ -172,7 +172,7 @@ The extractor sees both user and assistant turns, but assistant turns are only c
 The output is:
 
 ```json
-{"facts": ["Builds AgenticRag with FastAPI", "Prefers concise explanations"]}
+{"facts": ["Builds RunaxAI with FastAPI", "Prefers concise explanations"]}
 ```
 
 The extractor is optimized for durable facts like:
@@ -260,7 +260,7 @@ When a new session is created or restored:
 
 ```text
 Known facts about the user:
-- Builds AgenticRag with FastAPI
+- Builds RunaxAI with FastAPI
 - Prefers concise explanations
 ```
 

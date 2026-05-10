@@ -1,4 +1,4 @@
-AgenticRAG has been deployed!
+RunaxAI has been deployed!
 
 {{- if .Values.ingress.enabled }}
 Access the application at:

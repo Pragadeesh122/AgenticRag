@@ -1,5 +1,5 @@
 {{/*
-Prometheus scrape config for AgenticRAG.
+Prometheus scrape config for RunaxAI.
 When monitoring.enabled=true, this is mounted by the Prometheus deployment.
 When using external kube-prometheus-stack, use this as additionalScrapeConfigs.
 */}}

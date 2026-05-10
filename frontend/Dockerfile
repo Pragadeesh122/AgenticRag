@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# AgenticRAG Frontend — production multi-stage build (Next.js standalone)
+# RunaxAI Frontend — production multi-stage build (Next.js standalone)
 # ---------------------------------------------------------------------------
 
 # --- Stage 1: Install dependencies ---

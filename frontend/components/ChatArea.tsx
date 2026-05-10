@@ -40,8 +40,8 @@ const SUGGESTIONS: SuggestionCard[] = [
   },
 ];
 
-// AgenticRAG logo: interconnected network graph with central pulse spark
-export function AgenticLogo({ size = 40 }: { size?: number }) {
+// RunaxAI logo: interconnected network graph with central pulse spark
+export function RunaxLogo({ size = 40 }: { size?: number }) {
   return (
     <svg
       width={size}
@@ -243,14 +243,14 @@ export default function ChatArea({
               {/* Logo + heading */}
               <div className="flex flex-col items-center gap-3 text-center">
                 <div className="w-14 h-14 rounded-2xl bg-linear-to-br from-violet-600/20 to-purple-600/20 border border-violet-500/20 flex items-center justify-center">
-                  <AgenticLogo size={36} />
+                  <RunaxLogo size={36} />
                 </div>
                 <div>
                   <h1 className="text-2xl font-semibold text-zinc-100 tracking-tight mb-1.5">
-                    AgenticRAG
+                    RunaxAI
                   </h1>
                   <p className="text-sm text-zinc-500 max-w-sm leading-relaxed">
-                    AI with full tool access — RAG search, database queries, and web browsing
+                    AI with full tool access — document search, database queries, and web browsing
                   </p>
                 </div>
               </div>

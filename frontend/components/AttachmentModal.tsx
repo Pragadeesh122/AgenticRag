@@ -30,25 +30,28 @@ export default function AttachmentModal({
   attachment,
   onClose,
 }: AttachmentModalProps) {
-  const [url, setUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{
+    storageKey: string;
+    url: string | null;
+    error: string | null;
+  } | null>(null);
 
   useEffect(() => {
-    if (!attachment) {
-      setUrl(null);
-      setError(null);
-      return;
-    }
+    if (!attachment) return;
+
     let cancelled = false;
-    setUrl(null);
-    setError(null);
+    const storageKey = attachment.storageKey;
     getChatAttachmentUrl(attachment.storageKey)
       .then((u) => {
-        if (!cancelled) setUrl(u);
+        if (!cancelled) setPreview({ storageKey, url: u, error: null });
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Failed to load attachment");
+        setPreview({
+          storageKey,
+          url: null,
+          error: err instanceof Error ? err.message : "Failed to load attachment",
+        });
       });
     return () => {
       cancelled = true;
@@ -68,6 +71,10 @@ export default function AttachmentModal({
 
   const isImage = isImageAttachment(attachment);
   const isPdf = isPdfAttachment(attachment);
+  const currentPreview =
+    preview?.storageKey === attachment.storageKey ? preview : null;
+  const url = currentPreview?.url ?? null;
+  const error = currentPreview?.error ?? null;
 
   return (
     <div

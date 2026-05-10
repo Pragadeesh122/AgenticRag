@@ -80,7 +80,7 @@ This uses GitHub's official Actions Runner Controller Helm charts and the offici
 
 Prometheus scrapes the API's `/metrics` endpoint. Config at `monitoring/prometheus/prometheus.yml`.
 
-The API exposes both standard HTTP metrics and custom AgenticRAG metrics (LLM, tools, agents, orchestration). See [Observability](architecture/observability.md) for the full metrics catalog.
+The API exposes both standard HTTP metrics and custom RunaxAI metrics (LLM, tools, agents, orchestration). See [Observability](architecture/observability.md) for the full metrics catalog.
 
 ### Loki + Promtail
 
@@ -100,7 +100,7 @@ Config: `monitoring/tempo/tempo-config.yml`
 
 Grafana is pre-provisioned with:
 - **Datasources** — Prometheus, Loki, and Tempo (auto-configured)
-- **Dashboards** — Economics, Agentic Ops, UX & Latency
+- **Dashboards** — Economics, Operations, UX & Latency
 - **Alert rules** — pre-configured rules (contact points must be set manually)
 
 Default login on a fresh Grafana volume: `admin`/`admin` (configurable via `GRAFANA_ADMIN_USER`/`GRAFANA_ADMIN_PASSWORD`). If the `grafana_data` volume already exists, Grafana keeps the previously stored admin password instead of reapplying the env defaults.

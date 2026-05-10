@@ -1,6 +1,6 @@
 apiVersion: v2
 name: agenticrag
-description: AgenticRAG - Agentic RAG Chat Application
+description: RunaxAI - AI Knowledge Workspace
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

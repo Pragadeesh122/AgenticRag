@@ -17,7 +17,7 @@ MAX_TOOL_CALLS = 3
 
 
 def main():
-    print("Hello from agenticrag!")
+    print("Hello from RunaxAI!")
     user_id = os.getenv("LOCAL_USER_ID", "").strip()
 
     # Load semantic memory into system prompt

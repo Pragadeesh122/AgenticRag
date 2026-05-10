@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# AgenticRAG — production overrides for runaxai.com
+# RunaxAI — production overrides for runaxai.com
 # Deploy with:
 #   helm upgrade agenticrag ./helm/agenticrag \
 #     -f helm/agenticrag/values.yaml \

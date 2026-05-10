@@ -21,8 +21,8 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "AgenticRAG",
-  description: "AI with full tool access — RAG search, database queries, web browsing",
+  title: "RunaxAI",
+  description: "AI with full tool access — document search, database queries, web browsing",
 };
 
 export default function RootLayout({

@@ -1,6 +1,6 @@
-# AgenticRAG
+# RunaxAI
 
-An agentic RAG chat application that combines document-grounded retrieval with autonomous tool use. Upload documents to a project and chat with them using specialized AI agents, or use the general chat with web search, database queries, and headless browsing. Built with FastAPI, Next.js, Pinecone, and Redis.
+A tool-augmented document chat application that combines document-grounded retrieval with autonomous tool use. Upload documents to a project and chat with them using specialized AI assistants, or use the general chat with web search, database queries, and headless browsing. Built with FastAPI, Next.js, Pinecone, and Redis.
 
 ## Quick Start
 

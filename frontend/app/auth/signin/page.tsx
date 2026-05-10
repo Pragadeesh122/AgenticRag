@@ -117,7 +117,7 @@ export default function SignIn() {
       <div className='relative z-10 mx-auto flex min-h-screen w-full max-w-6xl items-center px-6 py-10'>
         <div className='hidden flex-1 pr-12 lg:block'>
           <p className='mb-3 text-xs uppercase tracking-[0.24em] text-violet-300/80'>
-            AgenticRAG
+            RunaxAI
           </p>
           <h1 className='max-w-xl text-4xl font-semibold leading-tight tracking-tight text-zinc-100'>
             Secure access to your retrieval and agent workflows.

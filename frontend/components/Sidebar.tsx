@@ -6,7 +6,7 @@ import { TrashIcon } from '@phosphor-icons/react/dist/ssr/Trash';
 import { ChatTeardropDots } from '@phosphor-icons/react/dist/ssr/ChatTeardropDots';
 import { FolderSimple } from '@phosphor-icons/react/dist/ssr/FolderSimple';
 import { Plus } from '@phosphor-icons/react/dist/ssr/Plus';
-import { AgenticLogo } from './ChatArea';
+import { RunaxLogo } from './ChatArea';
 import SidebarAccountFooter from './SidebarAccountFooter';
 import { createProject, deleteProject } from '@/lib/api';
 import type { Session, Project, User } from '@/lib/types';
@@ -168,9 +168,9 @@ export default function Sidebar({
       <div className="flex items-center justify-between px-4 py-4 shrink-0">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-lg bg-linear-to-br from-violet-600/30 to-purple-600/30 border border-violet-500/20 flex items-center justify-center shrink-0">
-            <AgenticLogo size={22} />
+            <RunaxLogo size={22} />
           </div>
-          <span className="text-sm font-semibold text-zinc-200 tracking-tight">AgenticRAG</span>
+          <span className="text-sm font-semibold text-zinc-200 tracking-tight">RunaxAI</span>
         </div>
 
         <button

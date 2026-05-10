@@ -103,7 +103,7 @@ def start_orchestrator() -> tuple[subprocess.Popen, list]:
     )
     t.start()
 
-    # consume the "Hello from agenticrag!" banner
+    # consume the "Hello from RunaxAI!" banner
     proc.stdout.readline()
     return proc, stderr_logs
 

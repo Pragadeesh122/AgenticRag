@@ -36,9 +36,9 @@ data:
   dashboards.yaml: |
     apiVersion: 1
     providers:
-      - name: AgenticRAG
+      - name: RunaxAI
         orgId: 1
-        folder: AgenticRAG
+        folder: RunaxAI
         type: file
         disableDeletion: false
         editable: true

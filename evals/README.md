@@ -1,6 +1,6 @@
 # RAG Evaluation Harness
 
-Evaluate retrieval quality and answer generation for the AgenticRAG pipeline.
+Evaluate retrieval quality and answer generation for the RunaxAI pipeline.
 
 ## Quick start
 

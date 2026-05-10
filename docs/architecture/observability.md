@@ -136,9 +136,9 @@ Three dashboards are auto-provisioned from `monitoring/grafana/provisioning/dash
 
 | Dashboard | Focus |
 |-----------|-------|
-| **AgenticRAG - Economics** | LLM spend by provider/model, token usage trends, cost per chat type |
-| **AgenticRAG - Agentic Ops** | Agent routing distribution, tool call counts, orchestration step analysis, retrieval chunk counts, duplicate suppression rates |
-| **AgenticRAG - UX & Latency** | TTFT distribution, request duration, streaming output speed, HTTP request rates |
+| **RunaxAI - Economics** | LLM spend by provider/model, token usage trends, cost per chat type |
+| **RunaxAI - Operations** | Agent routing distribution, tool call counts, orchestration step analysis, retrieval chunk counts, duplicate suppression rates |
+| **RunaxAI - UX & Latency** | TTFT distribution, request duration, streaming output speed, HTTP request rates |
 
 ### Alert Rules
 

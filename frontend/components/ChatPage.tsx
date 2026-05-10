@@ -682,7 +682,7 @@ export default function ChatPage({
               {activeSessionId
                 ? sessions.find((s) => s.id === activeSessionId)?.title ||
                   "New chat"
-                : "AgenticRAG"}
+                : "RunaxAI"}
             </span>
           </div>
           <div className='flex items-center gap-1'>

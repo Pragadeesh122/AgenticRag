@@ -40,7 +40,7 @@ export default function LandingPage() {
         role="banner"
       >
         <div className="max-w-[1400px] mx-auto px-6 md:px-10 h-14 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2.5" aria-label="AgenticRAG home">
+          <Link href="/" className="flex items-center gap-2.5" aria-label="RunaxAI home">
             <div
               className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0"
               style={{ background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.22)" }}
@@ -48,7 +48,7 @@ export default function LandingPage() {
               <div className="w-2 h-2 rounded-full" style={{ background: accent }} />
             </div>
             <span className="text-[13px] font-bold tracking-tight" style={{ color: textPri }}>
-              AgenticRAG
+              RunaxAI
             </span>
           </Link>
 
@@ -165,7 +165,7 @@ export default function LandingPage() {
                   style={{ maxWidth: "400px", fontSize: "1.0625rem", lineHeight: 1.6, color: textSec }}
                 >
                   Drop your files, connect a database, point at the web.
-                  AgenticRAG searches across all of it and cites every source.
+                  RunaxAI searches across all of it and cites every source.
                 </p>
 
                 <div className="flex flex-col sm:flex-row items-start gap-3 mb-16 lg:mb-0 hero-fade-4">
@@ -226,7 +226,7 @@ export default function LandingPage() {
                     >
                       <span className="w-1.5 h-1.5 rounded-full" style={{ background: "rgba(16,185,129,0.5)" }} />
                       <span className="text-[10px] font-mono" style={{ color: "rgba(255,255,255,0.25)" }}>
-                        agenticrag.app
+                        runaxai.com
                       </span>
                     </div>
                   </div>
@@ -240,7 +240,7 @@ export default function LandingPage() {
                     >
                       <div className="flex items-center gap-2 px-2 py-2 mb-2">
                         <span className="w-1.5 h-1.5 rounded-full" style={{ background: "rgba(16,185,129,0.5)" }} />
-                        <span className="text-[10px] font-semibold" style={{ color: "rgba(255,255,255,0.35)" }}>AgenticRAG</span>
+                        <span className="text-[10px] font-semibold" style={{ color: "rgba(255,255,255,0.35)" }}>RunaxAI</span>
                       </div>
                       <div
                         className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg mb-3"
@@ -454,7 +454,7 @@ export default function LandingPage() {
               {/* Row 2 */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-px" style={{ background: border, borderTop: `1px solid ${border}` }}>
 
-                {/* Agentic reasoning */}
+                {/* Autonomous reasoning */}
                 <div className="p-7 group relative overflow-hidden" style={{ background: surface }}>
                   <div
                     className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100"
@@ -473,7 +473,7 @@ export default function LandingPage() {
                       <GitBranch size={18} weight="duotone" style={{ color: textMute }} />
                     </div>
                     <div>
-                      <h3 className="text-sm font-semibold mb-1.5 tracking-tight" style={{ color: textPri }}>Agentic Reasoning</h3>
+                      <h3 className="text-sm font-semibold mb-1.5 tracking-tight" style={{ color: textPri }}>Autonomous Reasoning</h3>
                       <p className="text-[0.9375rem] leading-relaxed" style={{ color: textSec }}>
                         Chains multiple tool calls automatically. Multi-step queries, zero manual prompting.
                       </p>
@@ -698,7 +698,7 @@ export default function LandingPage() {
         <div className="max-w-[1400px] mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full" style={{ background: accent }} aria-hidden="true" />
-            <span className="text-xs font-semibold" style={{ color: "rgba(255,255,255,0.25)" }}>AgenticRAG</span>
+            <span className="text-xs font-semibold" style={{ color: "rgba(255,255,255,0.25)" }}>RunaxAI</span>
           </div>
           <p className="text-xs" style={{ color: "rgba(255,255,255,0.15)" }}>
             Built with AI &mdash; for humans who want answers.
