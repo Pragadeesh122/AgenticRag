@@ -1,0 +1,15 @@
+# Format: <CVE-id>  # justification
+#
+# Each ignore should be tied to a documented reason. Re-evaluate when the
+# affected package is upgraded.
+
+# CVE-2026-42208: SQL injection in litellm proxy server's API-key auth path.
+# We use litellm purely as an SDK (litellm.completion / embedding /
+# token_counter / cost_per_token) — the proxy server is never started in
+# this deployment, so the vulnerable code path is unreachable.
+#
+# Bump attempt history:
+#   1.83.7  — broken wheel (runtime ImportError on add_system_prompt_to_messages)
+#   1.83.8+ — hard-pins openai==2.24.0, incompatible with our openai>=2.28.0
+# Stay on 1.83.1 + ignore until upstream resolves either constraint.
+CVE-2026-42208

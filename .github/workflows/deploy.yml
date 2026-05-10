@@ -69,6 +69,7 @@ jobs:
           ignore-unfixed: true
           vuln-type: os,library
           format: table
+          trivyignores: .trivyignore
 
       - name: Build & push frontend
         uses: docker/build-push-action@v5
@@ -95,6 +96,7 @@ jobs:
           ignore-unfixed: true
           vuln-type: os,library
           format: table
+          trivyignores: .trivyignore
 
   # ---------------------------------------------------------------------------
   # 2. Deploy to K3s via Helm
