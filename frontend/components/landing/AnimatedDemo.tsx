@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 /* ────────────────────────────────────────────────────
    Animated chat demo — plays a looping sequence:
    1. User message appears
-   2. RAG tool call runs → done
+   2. Document search tool call runs -> done
    3. Web tool call runs → done
    4. Assistant streams in char-by-char with sources
    5. Pause, then reset and replay
@@ -18,7 +18,7 @@ const ASSISTANT_MSG =
   'Your Q3 report shows **4.2% monthly churn** \u2014 1.8 points above the industry median of 2.4% for B2B SaaS. The report attributes this to onboarding drop-off in weeks 2\u20133, where **38% of new accounts** never complete setup.';
 
 const TOOLS: { name: string; label: string; detail: string; accent: boolean }[] = [
-  { name: "rag_search", label: "rag_search", detail: 'Searching "Q3 churn analysis" across 847 documents\u2026', accent: true },
+  { name: "document_search", label: "document_search", detail: 'Searching "Q3 churn analysis" across 847 documents\u2026', accent: true },
   { name: "web_search", label: "web_search", detail: "Fetching SaaS churn benchmarks 2024\u2026", accent: false },
 ];
 
@@ -179,7 +179,7 @@ export default function AnimatedDemo() {
                     border: tool.accent ? "1px solid rgba(16,185,129,0.18)" : "1px solid rgba(255,255,255,0.1)",
                   }}
                 >
-                  {/* Icon — magnifying glass for RAG, globe for web */}
+                  {/* Icon - magnifying glass for documents, globe for web */}
                   {tool.accent ? (
                     <svg width="12" height="12" viewBox="0 0 256 256" fill="none">
                       <circle cx="116" cy="116" r="76" stroke="#10b981" strokeWidth="24" />

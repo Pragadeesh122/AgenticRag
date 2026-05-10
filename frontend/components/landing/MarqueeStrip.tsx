@@ -1,7 +1,7 @@
 "use client";
 
 const ITEMS = [
-  "RAG Search",
+  "Document Search",
   "SQL Queries",
   "Live Web Browsing",
   "Autonomous Reasoning",
