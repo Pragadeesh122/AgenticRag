@@ -23,6 +23,13 @@ const instrumentSerif = Instrument_Serif({
 export const metadata: Metadata = {
   title: "RunaxAI",
   description: "AI with full tool access — document search, database queries, web browsing",
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico", sizes: "any" },
+    ],
+    shortcut: "/icon.svg",
+  },
 };
 
 export default function RootLayout({
