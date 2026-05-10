@@ -35,6 +35,16 @@ rules:
   - apiGroups: ["cert-manager.io"]
     resources: ["clusterissuers", "certificates", "certificaterequests"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Promtail (and any other chart resource) ships ClusterRole/Binding +
+  # namespace-scoped Role/RoleBinding. Helm needs to read/write all four to
+  # diff and roll back releases.
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterroles", "clusterrolebindings", "roles", "rolebindings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Traefik Middlewares (used by grafana.yaml for basic auth).
+  - apiGroups: ["traefik.io"]
+    resources: ["middlewares", "ingressroutes", "ingressroutetcps", "ingressrouteudps", "tlsoptions", "serverstransports"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
