@@ -11,6 +11,8 @@ import { CircleNotch } from '@phosphor-icons/react/dist/ssr/CircleNotch';
 import {
   CHAT_ATTACHMENT_MAX_BYTES,
   CHAT_ATTACHMENT_MAX_COUNT,
+  CHAT_SESSION_MAX_BYTES,
+  CHAT_SESSION_MAX_FILES,
   isAllowedChatAttachment,
   uploadChatAttachment,
 } from '@/lib/api';
@@ -33,6 +35,8 @@ interface ChatInputProps {
   placeholder?: string;
   attachments?: ChatAttachment[];
   onAttachmentsChange?: (next: ChatAttachment[]) => void;
+  sessionFileCount?: number;
+  sessionBytes?: number;
 }
 
 function formatBytes(n: number): string {
@@ -57,6 +61,8 @@ export default function ChatInput({
   placeholder = 'Send a message...',
   attachments,
   onAttachmentsChange,
+  sessionFileCount = 0,
+  sessionBytes = 0,
 }: ChatInputProps) {
   const attachmentsEnabled = !!onAttachmentsChange;
   const currentAttachments = attachments ?? [];
@@ -130,17 +136,34 @@ export default function ChatInput({
     [currentAttachments, onAttachmentsChange, flashError]
   );
 
+  const stagedBytes = useMemo(
+    () => currentAttachments.reduce((sum, a) => sum + (a.fileSize || 0), 0),
+    [currentAttachments]
+  );
+  const usedFileCount = sessionFileCount + totalCount;
+  const usedBytes = sessionBytes + stagedBytes;
+  const sessionLimitsReached =
+    usedFileCount >= CHAT_SESSION_MAX_FILES ||
+    usedBytes >= CHAT_SESSION_MAX_BYTES;
+
   const acceptFiles = useCallback(
     (files: FileList | File[]) => {
       const incoming = Array.from(files);
       if (incoming.length === 0) return;
 
-      const remainingSlots = CHAT_ATTACHMENT_MAX_COUNT - totalCount;
+      const turnSlots = CHAT_ATTACHMENT_MAX_COUNT - totalCount;
+      const sessionSlots = CHAT_SESSION_MAX_FILES - (sessionFileCount + totalCount);
+      const remainingSlots = Math.max(0, Math.min(turnSlots, sessionSlots));
       if (remainingSlots <= 0) {
-        flashError(`Max ${CHAT_ATTACHMENT_MAX_COUNT} files per message`);
+        if (turnSlots <= 0) {
+          flashError(`Max ${CHAT_ATTACHMENT_MAX_COUNT} files per message`);
+        } else {
+          flashError(`Session limit: ${CHAT_SESSION_MAX_FILES} files total`);
+        }
         return;
       }
 
+      let bytesBudget = CHAT_SESSION_MAX_BYTES - usedBytes;
       const accepted: File[] = [];
       for (const file of incoming.slice(0, remainingSlots)) {
         if (!isAllowedChatAttachment(file)) {
@@ -153,6 +176,13 @@ export default function ChatInput({
           );
           continue;
         }
+        if (file.size > bytesBudget) {
+          flashError(
+            `${file.name}: would exceed session limit of ${CHAT_SESSION_MAX_BYTES / (1024 * 1024)} MB`
+          );
+          continue;
+        }
+        bytesBudget -= file.size;
         accepted.push(file);
       }
       if (incoming.length > remainingSlots) {
@@ -162,7 +192,7 @@ export default function ChatInput({
         void startUpload(file);
       });
     },
-    [totalCount, startUpload, flashError]
+    [totalCount, sessionFileCount, usedBytes, startUpload, flashError]
   );
 
   const handleFilePickerChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
@@ -315,7 +345,7 @@ export default function ChatInput({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={totalCount >= CHAT_ATTACHMENT_MAX_COUNT || isStreaming}
+                disabled={totalCount >= CHAT_ATTACHMENT_MAX_COUNT || sessionLimitsReached || isStreaming}
                 aria-label="Attach files"
                 className="shrink-0 mb-0.5 p-1 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-white/8 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
@@ -377,7 +407,13 @@ export default function ChatInput({
           {errorMessage}
         </p>
       )}
-      {!errorMessage && (
+      {!errorMessage && attachmentsEnabled && usedFileCount > 0 && (
+        <p className="text-center text-[11px] text-zinc-700 mt-1.5 select-none">
+          {usedFileCount}/{CHAT_SESSION_MAX_FILES} files &middot;{' '}
+          {formatBytes(usedBytes)}/{CHAT_SESSION_MAX_BYTES / (1024 * 1024)} MB this session
+        </p>
+      )}
+      {!errorMessage && (!attachmentsEnabled || usedFileCount === 0) && (
         <p className="text-center text-[11px] text-zinc-700 mt-1.5 select-none">
           Enter to send &middot; Shift+Enter for new line &middot; <kbd className="text-zinc-600">/</kbd> to focus
         </p>

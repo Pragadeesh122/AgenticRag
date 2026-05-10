@@ -94,6 +94,8 @@ interface ChatAreaProps {
   projectDocuments?: ProjectDocument[];
   attachments?: ChatAttachment[];
   onAttachmentsChange?: (next: ChatAttachment[]) => void;
+  sessionFileCount?: number;
+  sessionBytes?: number;
 }
 
 export default function ChatArea({
@@ -109,6 +111,8 @@ export default function ChatArea({
   projectDocuments,
   attachments,
   onAttachmentsChange,
+  sessionFileCount = 0,
+  sessionBytes = 0,
 }: ChatAreaProps) {
   const inputRef = useRef<HTMLDivElement>(null);
 
@@ -320,6 +324,8 @@ export default function ChatArea({
             disabled={isLoading && !isStreaming}
             attachments={attachments}
             onAttachmentsChange={onAttachmentsChange}
+            sessionFileCount={sessionFileCount}
+            sessionBytes={sessionBytes}
           />
         </div>
       </div>

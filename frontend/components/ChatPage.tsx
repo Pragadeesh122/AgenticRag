@@ -1,6 +1,6 @@
 "use client";
 
-import {useState, useCallback, useEffect, useRef} from "react";
+import {useState, useCallback, useEffect, useMemo, useRef} from "react";
 import { signOut } from "@/lib/api";
 import {CaretLeft} from "@phosphor-icons/react/dist/ssr/CaretLeft";
 import {CaretRight} from "@phosphor-icons/react/dist/ssr/CaretRight";
@@ -126,6 +126,21 @@ export default function ChatPage({
   const activeMessages: Message[] = activeSessionId
     ? messagesBySession[activeSessionId] ?? []
     : [];
+
+  const {sessionFileCount, sessionBytes} = useMemo(() => {
+    const ids = new Set<string>();
+    let bytes = 0;
+    for (const msg of activeMessages) {
+      if (msg.role !== "user") continue;
+      const atts = msg.attachments ?? msg.metadata?.attachments ?? [];
+      for (const att of atts) {
+        if (ids.has(att.id)) continue;
+        ids.add(att.id);
+        bytes += att.fileSize || 0;
+      }
+    }
+    return {sessionFileCount: ids.size, sessionBytes: bytes};
+  }, [activeMessages]);
 
   // Update messages in React state (no localStorage, DB save happens separately)
   const updateMessages = useCallback(
@@ -273,25 +288,6 @@ export default function ChatPage({
     const currentSessionId = sessionId;
     const persistedMessages = messagesBySession[currentSessionId] ?? [];
     const isFirstTurn = persistedMessages.length === 0;
-
-    // Postgres is the source of truth for attachments: collect every
-    // attachment across prior user messages, then resend them together with
-    // any new ones so the LLM always has the full file context for this turn.
-    const priorSessionAttachments: ChatAttachment[] = [];
-    const seenAttachmentIds = new Set<string>();
-    for (const msg of persistedMessages) {
-      if (msg.role !== "user") continue;
-      const atts = msg.attachments ?? msg.metadata?.attachments ?? [];
-      for (const att of atts) {
-        if (seenAttachmentIds.has(att.id)) continue;
-        seenAttachmentIds.add(att.id);
-        priorSessionAttachments.push(att);
-      }
-    }
-    const llmContextAttachments: ChatAttachment[] = [
-      ...priorSessionAttachments,
-      ...submittedAttachments.filter((a) => !seenAttachmentIds.has(a.id)),
-    ];
 
     let backendSessionId =
       sessions.find((s) => s.id === currentSessionId)?.backendSessionId ??
@@ -536,7 +532,7 @@ export default function ChatPage({
             )
           );
         }
-      }, abortController.signal, llmContextAttachments);
+      }, abortController.signal, submittedAttachments);
 
       // Save both messages to DB after streaming completes
       // Replace local IDs with DB IDs so metadata PATCH works
@@ -727,6 +723,8 @@ export default function ChatPage({
               onStop={handleStop}
               attachments={pendingAttachments}
               onAttachmentsChange={setPendingAttachments}
+              sessionFileCount={sessionFileCount}
+              sessionBytes={sessionBytes}
             />
           </div>
         </AssistantRuntimeProvider>

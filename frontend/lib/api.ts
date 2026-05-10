@@ -187,6 +187,8 @@ export type SSEEvent =
 
 export const CHAT_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
 export const CHAT_ATTACHMENT_MAX_COUNT = 5;
+export const CHAT_SESSION_MAX_FILES = 10;
+export const CHAT_SESSION_MAX_BYTES = 20 * 1024 * 1024;
 export const CHAT_ATTACHMENT_ALLOWED_MIME = new Set<string>([
   "image/png",
   "image/jpeg",

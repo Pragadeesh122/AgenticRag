@@ -18,11 +18,18 @@ from pipeline.storage import ensure_bucket, get_presigned_put_url, get_presigned
 from api.session import (
     create_session,
     delete_session,
+    get_messages,
     restore_session,
     session_exists,
     session_owned_by_user,
 )
 from api.chat import chat_stream
+from pipeline.chat_attachments import (
+    MAX_SESSION_ATTACHMENT_TOKENS,
+    MAX_TOKENS_PER_DOCUMENT,
+    compute_attachment_tokens,
+    find_oversized_attachments,
+)
 from api.projects import router as projects_router
 from api.health import router as health_router
 from memory.semantic import _embed
@@ -229,6 +236,8 @@ CHAT_ATTACHMENT_ALLOWED_EXTS = {
 }
 CHAT_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024
 CHAT_ATTACHMENT_MAX_PER_MESSAGE = 5
+CHAT_SESSION_MAX_FILES = 10
+CHAT_SESSION_MAX_BYTES = 20 * 1024 * 1024
 CHAT_UPLOAD_PREFIX = "chat"
 
 
@@ -290,6 +299,75 @@ def chat(req: ChatRequest, user: User = Depends(current_active_user)):
         if att.fileSize and att.fileSize > CHAT_ATTACHMENT_MAX_BYTES:
             raise HTTPException(status_code=400, detail="Attachment exceeds size limit")
         attachments.append(att.model_dump())
+
+    if attachments:
+        chat_logger = logging.getLogger("api.chat_stream")
+        chat_logger.info(
+            "[token-check] /chat/stream request: %d new attachment(s)",
+            len(attachments),
+        )
+        try:
+            existing = get_messages(req.sessionId)
+        except KeyError:
+            existing = []
+        seen_ids: set[str] = set()
+        all_refs: list[dict] = []
+        for msg in existing:
+            for ref in msg.get("attachments") or []:
+                rid = ref.get("id")
+                if not rid or rid in seen_ids:
+                    continue
+                seen_ids.add(rid)
+                all_refs.append(ref)
+        for att in attachments:
+            if att["id"] in seen_ids:
+                continue
+            seen_ids.add(att["id"])
+            all_refs.append(att)
+
+        if len(all_refs) > CHAT_SESSION_MAX_FILES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Session limit reached: at most {CHAT_SESSION_MAX_FILES} files per chat",
+            )
+        total_bytes = sum(int(r.get("fileSize") or 0) for r in all_refs)
+        if total_bytes > CHAT_SESSION_MAX_BYTES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Session limit reached: {CHAT_SESSION_MAX_BYTES // (1024 * 1024)} MB total across all files",
+            )
+
+        oversized = find_oversized_attachments(attachments)
+        if oversized:
+            names = ", ".join(
+                f"{att.get('filename') or '?'} ({tokens}t)" for att, tokens in oversized
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Document too dense for chat context: {names}. "
+                    f"Max {MAX_TOKENS_PER_DOCUMENT} tokens per file."
+                ),
+            )
+
+        session_tokens = compute_attachment_tokens(all_refs)
+        if session_tokens > MAX_SESSION_ATTACHMENT_TOKENS:
+            chat_logger.warning(
+                "[token-check] reject session: %d tokens > cap %d",
+                session_tokens, MAX_SESSION_ATTACHMENT_TOKENS,
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Total attachment tokens ({session_tokens}) exceed session "
+                    f"cap of {MAX_SESSION_ATTACHMENT_TOKENS}. Remove a file to continue."
+                ),
+            )
+        chat_logger.info(
+            "[token-check] accept request: %d total tokens, %d file(s) (caps: doc=%d, session=%d)",
+            session_tokens, len(all_refs),
+            MAX_TOKENS_PER_DOCUMENT, MAX_SESSION_ATTACHMENT_TOKENS,
+        )
 
     try:
         return StreamingResponse(
