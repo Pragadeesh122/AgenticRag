@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { MDXRemote } from "next-mdx-remote/rsc";
 import rehypePrettyCode from "rehype-pretty-code";
 import rehypeSlug from "rehype-slug";
+import remarkGfm from "remark-gfm";
 import { formatDate, getAllPosts, getPost } from "@/lib/blog";
 
 export const revalidate = 60;
@@ -70,6 +71,7 @@ export default async function BlogPostPage({
           source={post.content}
           options={{
             mdxOptions: {
+              remarkPlugins: [remarkGfm],
               rehypePlugins: [
                 rehypeSlug,
                 [

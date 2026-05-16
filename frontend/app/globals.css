@@ -560,6 +560,45 @@ textarea {
   margin: 1.75rem 0;
 }
 
+.blog-prose table {
+  width: 100%;
+  margin: 1.75rem 0;
+  border-collapse: collapse;
+  font-size: 14.5px;
+  display: block;
+  overflow-x: auto;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+}
+
+.blog-prose thead {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.blog-prose th {
+  text-align: left;
+  font-weight: 600;
+  color: #f4f4f5;
+  padding: 0.7rem 0.95rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
+}
+
+.blog-prose td {
+  padding: 0.65rem 0.95rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: #d4d4d8;
+  vertical-align: top;
+}
+
+.blog-prose tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.blog-prose tbody tr:hover {
+  background: rgba(255, 255, 255, 0.015);
+}
+
 /* ─── Landing page animations ─── */
 
 @keyframes float {

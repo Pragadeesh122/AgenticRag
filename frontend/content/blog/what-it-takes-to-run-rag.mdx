@@ -1,0 +1,228 @@
+---
+title: "Everyone Demos RAG. Nobody Shows What It Takes to Run It."
+description: "A deep dive into Runax — a production document intelligence platform built without LangChain or LangGraph."
+date: "2026-05-16"
+author: "Pragadeesh"
+tags: ["rag", "architecture", "production", "engineering"]
+---
+
+There are thousands of RAG demos on the internet. Most of them look like this:
+
+1. Load a PDF
+2. Chunk it
+3. Embed it
+4. Stuff chunks into a prompt
+5. Call GPT-4
+
+That works for a demo. It doesn't work when you're building something you'd actually run.
+
+Over the last several months I built **Runax** ([runaxai.com](https://runaxai.com)) — a document intelligence and agentic chat platform. This post is a walk through every subsystem: what I built, why I built it that way, and what I'd do differently.
+
+Stack: FastAPI, Next.js, Pinecone, Redis, PostgreSQL, MinIO, LiteLLM, Prometheus, Loki, Tempo, Grafana, K3s, Helm.
+
+No LangChain. No LangGraph.
+
+## 1. Two Chat Modes, Not One
+
+Most document chat apps have one mode: ask a question, get a RAG answer. Runax has two distinct paths designed for different interaction patterns.
+
+### General Chat: Agentic Orchestration
+
+General chat is a multi-step reasoning loop. The user talks to an orchestrator that can call tools — web search, database queries, headless browser, knowledge base lookups — across multiple steps before producing a final answer.
+
+```text
+User message
+    → LLM call with tool definitions
+    → Tool calls returned?
+        → No: stream response to user
+        → Yes: budget remaining?
+            → No: force final answer from gathered evidence
+            → Yes: plan & execute tools → append results → loop
+```
+
+The loop lives in `api/chat.py`. A few things that make it production-worthy rather than toy-grade:
+
+**Budget enforcement.** Three max reasoning steps, six total tool calls, three parallel calls per step. When the budget is exhausted, the orchestrator injects a system message: "stop using tools and answer with what you have." If the LLM still returns tool calls, a stricter instruction follows. If that fails too, a graceful fallback message is returned. No runaway loops.
+
+**Conversation summarization.** When prompt tokens exceed 40,000, older messages are summarized. The summarizer keeps the last 4 non-tool messages verbatim, compresses older ones, and produces a rolling summary. This preserves continuity without bloating the context window indefinitely.
+
+### Project Chat: Agentic RAG
+
+Project chat is where documents live. The user uploads files to a project, and a specialized pipeline handles the rest:
+
+1. **Intent routing** — an LLM classifier picks the right agent (reasoning, summarization, quiz, visualization) based on the user's query
+2. **Adaptive retrieval** — the query is embedded and matched against the project's Pinecone namespace using a strategy tuned to corpus size
+3. **Context injection** — retrieved chunks are inserted into the agent's system prompt
+4. **Streaming response** — the agent generates a response grounded in retrieved context
+
+The two modes share infrastructure (Redis sessions, Postgres history, SSE streaming) but have completely separate orchestration paths.
+
+## 2. Adaptive Retrieval
+
+One of the first production decisions I had to make: what retrieval strategy to use.
+
+The answer depends on corpus size. A 50-chunk project and a 50,000-chunk project have completely different retrieval characteristics. Hardcoding a single strategy is the wrong call.
+
+Runax selects retrieval mode automatically:
+
+| Corpus size | Mode | Alpha | Top K | Rerank | Rationale |
+|---|---|---|---|---|---|
+| &lt; 500 chunks | Dense only | 1.0 | 5 | No | Semantic search is sufficient; BM25 adds noise |
+| 500 – 10K | Hybrid | 0.7 | 10 | No | BM25 catches exact keyword matches dense search misses |
+| &gt; 10K | Hybrid + rerank | 0.5 | 20 → 10 | Yes | Large corpora need reranking to filter noise from expanded candidates |
+
+**Alpha** controls dense/sparse weighting: `1.0` is pure dense (OpenAI `text-embedding-3-large`, 3072 dimensions), `0.0` is pure sparse (Pinecone's `pinecone-sparse-english-v0`, BM25-style). `0.7` means 70% semantic, 30% keyword.
+
+When reranking is enabled, the retriever fetches 20 candidates from Pinecone and passes them to `bge-reranker-v2-m3`. If the reranker fails (timeout, API error), results fall back to score-based ordering. Graceful degradation, not a hard failure.
+
+Agents can override `top_k` and `alpha` if their task demands it — the quiz agent, for instance, benefits from broader retrieval to cover more of the document.
+
+## 3. Semantic Retrieval Cache
+
+Every retrieval hit costs money and latency. The same question, slightly rephrased, shouldn't trigger a full embedding + vector search.
+
+Runax has a Redis-backed semantic cache scoped per project. Before hitting Pinecone, the retriever embeds the incoming query and checks for a semantically similar prior query using cosine similarity. If the similarity exceeds a threshold, it returns the cached results.
+
+The threshold matters. Too low and you get false hits — semantically unrelated queries returning each other's results. The threshold is tuned to block these while still catching genuine rephrasings ("what is the revenue?" vs "what were the total earnings?").
+
+Cache hits are traced via OpenTelemetry spans so you can see hit rates in Grafana without digging through logs.
+
+## 4. Three-Layer Memory Architecture
+
+Session memory in most RAG apps is stateless: every request gets the conversation history from the database. That works, but it leaves latency on the table and doesn't give you a place to put long-term user context.
+
+Runax uses three distinct layers:
+
+**Layer 1: Redis working memory.** The active session's message list lives in Redis during a conversation. Reads during the chat loop are low-latency hash lookups rather than database queries. TTL-bound — expires if the session is abandoned.
+
+**Layer 2: PostgreSQL chat history.** Every session and message is persisted to Postgres via SQLAlchemy. This is the restore source if Redis expires. When a user returns to an old session, the history is loaded from Postgres and re-written to Redis.
+
+**Layer 3: Atomic user memory facts.** This is the interesting one. After each chat turn, an ARQ background worker extracts atomic facts from the conversation ("user is building a document intelligence platform", "user prefers Python"). Each fact is embedded with pgvector and stored in `user_memory_fact`.
+
+Facts are never overwritten. When something changes, the old fact is superseded (a `superseded_at` timestamp is set, and a `superseded_by` foreign key points to the replacement). Full audit trail, no blind overwrites.
+
+At session start, the most semantically relevant facts for the current context are retrieved and injected into the system prompt. The LLM starts each session knowing what matters about this user.
+
+The extraction uses a two-pass approach: Pass 1 extracts candidate facts from the conversation. Pass 2 compares each candidate against existing facts using pgvector cosine distance and decides: insert as new, supersede an existing fact, or ignore (duplicate/irrelevant).
+
+## 5. Tool System and Planner
+
+General chat has four tool categories: web search, database queries, headless browser (Crawl4AI), and knowledge base lookups. But calling tools naively is how you burn through your reasoning budget on redundant calls.
+
+The **tool planner** (`utils/tool_planner.py`) sits between the LLM's tool call requests and actual execution. It handles:
+
+**Parallel vs sequential execution.** Tools marked `parallel_safe` with `requires_fresh_input=False` run concurrently via asyncio. Others run sequentially. The planner respects each tool's `max_parallel_instances` limit.
+
+**Duplicate suppression.** Each tool call is fingerprinted (SHA-256 of name + key arguments). If the same fingerprint was already executed and no new tool evidence has arrived since, the call is suppressed. This catches a common LLM failure mode: calling the same search twice with identical parameters.
+
+**Tool-level caching.** Expensive tool results (web searches, knowledge base queries) are cached in Redis. The cache key is derived from the tool name and arguments. Repeated queries within a session skip the actual tool execution.
+
+## 6. Four Specialized Agents with LLM Intent Routing
+
+Project chat doesn't use a single generic assistant. It routes to one of four agents based on the user's intent:
+
+- **Reasoning agent** — analytical questions, comparisons, synthesis
+- **Summarization agent** — document summaries, key points, overviews
+- **Quiz agent** — generates questions and answers from document content
+- **Visualization agent** — produces structured data for charts (Mermaid, recharts)
+
+An LLM classifier reads the user's query and picks the agent. Each agent has its own system prompt, retrieval parameter overrides, and optionally a structured output schema (the quiz agent, for instance, returns JSON that the frontend renders into an interactive quiz widget).
+
+Agents are defined as dataclasses with no framework magic — no decorator soup, no hidden registry. Auto-discovery scans the `agents/` directory and builds the routing table at startup.
+
+## 7. Provider Abstraction via LiteLLM
+
+Supporting multiple LLM providers without a unified abstraction layer is a maintenance nightmare. Runax uses LiteLLM to normalize calls across OpenAI, Anthropic, Gemini, Grok, and Ollama.
+
+The model is selected at the session level. Cost tracking is baked in — every LLM call records tokens and estimated spend per provider/model in Prometheus, so you can see exactly where money is going without digging through API bills.
+
+Streaming is handled via SSE. The frontend receives token events as they're generated and displays them progressively. TTFT (time-to-first-token) is measured per request and recorded as a Prometheus histogram — broken down by provider and model, so you can compare latency across providers in Grafana.
+
+## 8. Full Observability Stack
+
+Most demo projects instrument nothing. Runax treats observability as a first-class architectural concern.
+
+**Metrics (Prometheus + Grafana).** Custom metrics with the `agenticrag_` prefix cover: LLM request counts and latency, token volume by type and model, USD spend estimates, TTFT histograms, output tokens per second, tool execution counts, agent routing decisions, retrieval cache hit rates. Three pre-provisioned Grafana dashboards — no manual panel creation needed.
+
+**Traces (OpenTelemetry + Grafana Tempo).** Per-request spans across LLM calls, tool execution, retrieval, and document ingestion. The retrieval span records cache hit/miss, retrieval mode, top_k, alpha, and result count as attributes. You can trace a single request end-to-end from the API entry point through every subsystem call.
+
+**Logs (Loki + Promtail).** Container logs from all services are scraped by Promtail and sent to Loki. Queryable in Grafana alongside metrics and traces — no log aggregation service required.
+
+The observability stack starts with `docker compose up` alongside everything else. No separate setup step.
+
+## 9. Document Ingestion Pipeline
+
+Uploading a document triggers an ARQ async worker job. The pipeline:
+
+1. **Parse** — PyMuPDF for PDFs, python-docx for DOCX, pandas for CSV, direct read for TXT/MD
+2. **Extract text** — with page numbers preserved for PDFs
+3. **Chunk** — recursive chunking with sentence-boundary-aware overlap. Chunks under 20 characters are discarded. Overlap scans backward for sentence-ending punctuation rather than splitting at arbitrary character offsets
+4. **Embed** — dense (text-embedding-3-large, 3072d) and sparse (pinecone-sparse-english-v0) embeddings, batched at 96 per API call
+5. **Upsert** — vectors stored in Pinecone under the project's namespace with metadata (source, page, chunk_index, document_id, project_id)
+
+Files are stored in MinIO. The database tracks ingestion status per document so the frontend can show progress without polling the vector store.
+
+## 10. Evaluation Harness
+
+How do you know your RAG pipeline is actually working?
+
+Runax has a custom evaluation harness (`evals/run_eval.py`) that:
+
+1. Creates a real ephemeral project via the API
+2. Uploads and ingests real documents
+3. Waits for Pinecone consistency
+4. Runs queries through the actual retrieval pipeline
+5. Computes retrieval metrics: Recall@k, MRR, NDCG@k, substring recall
+6. Optionally generates answers and scores them with an LLM judge (faithfulness, completeness, hallucination, format adherence — 1–5 rubric)
+7. Writes JSON + Markdown reports to `evals/reports/`
+8. Cleans up everything — Pinecone namespace, database rows, MinIO objects
+
+No mocked retrieval. No synthetic vector stores. The eval runs against the real stack. If your pipeline regresses, you see it in Recall@k before it reaches users.
+
+```bash
+# Fast: retrieval metrics only
+uv run python evals/run_eval.py --dataset smoke --skip-judge
+
+# Full: retrieval + LLM-as-judge
+uv run python evals/run_eval.py --dataset smoke
+```
+
+## 11. Security
+
+A few things worth calling out:
+
+**Session ownership binding.** Every session is bound to the user who created it in Redis at creation time. Every subsequent request verifies ownership. Cross-user session access is rejected at the middleware level before business logic runs.
+
+**Sliding window rate limiting.** Redis sorted sets track request timestamps per user (extracted from the JWT). The window is configurable per route. Rate limit state is maintained server-side — no client-side bypass.
+
+**httponly JWT cookies.** No tokens in localStorage. `samesite=lax`, `secure` in production, 7-day lifetime.
+
+**Tool boundaries are server-controlled.** Users can configure agent behavior (system prompt hints, retrieval parameters) but cannot grant themselves new tool permissions. Tool authorization lives in the server-side agent definition, not in user-supplied input.
+
+## 12. Infrastructure
+
+Running on a Mac Mini (24GB RAM, 256GB storage) at home, exposed via Cloudflare Tunnel — no public IP, no port forwarding.
+
+K3s as the runtime (not minikube — minikube's VM layer complicates Cloudflare Tunnel integration). containerd for the container runtime. Docker only for building and pushing images to GHCR.
+
+A Helm umbrella chart at `helm/agenticrag/` covers the full stack: API, ARQ worker, Next.js frontend, Cloudflare tunnel, DDNS updater, Traefik ingress, HPA, and PodDisruptionBudget. Single `values.yaml` tuned for the home cluster.
+
+## What I'd Do Differently
+
+A few honest reflections:
+
+**Start with the eval harness, not at the end.** I built the eval harness after the pipeline was already written. Having it from the start would have caught retrieval regressions earlier.
+
+**The semantic cache threshold needs empirical tuning.** I set the cosine similarity threshold by intuition. A more rigorous approach would be to run the eval harness against a dataset of known-similar and known-different queries and find the threshold that maximizes precision/recall for cache hits.
+
+**Observability before features.** Adding Prometheus metrics to existing code is more work than designing around them. The TTFT tracking in particular required retrofitting the streaming path.
+
+## What's Next
+
+The CI/CD pipeline (GitHub Actions + self-hosted ARC runner in K3s) is the last gap before the project is fully production-ready. After that: open-sourcing with public stub implementations for the private knowledge base tools.
+
+The full documentation lives at [runaxai.com](https://runaxai.com). If you're building something similar or have questions about specific design decisions, I'm happy to go deeper in the comments.
+
+---
+
+*Runax is live at [runaxai.com](https://runaxai.com). The codebase (including all docs) will be open-sourced shortly.*
