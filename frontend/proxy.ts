@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const AUTH_COOKIE_NAME = "app_token";
 const SIGN_IN_PATH = "/auth/signin";
+const BLOG_HOST = "blog.runaxai.com";
 
 function isProtectedPath(pathname: string): boolean {
   return (
@@ -12,7 +13,13 @@ function isProtectedPath(pathname: string): boolean {
 }
 
 export function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+  const host = (request.headers.get("host") ?? "").toLowerCase();
+  const { pathname, search } = request.nextUrl;
+
+  if (host === BLOG_HOST && !pathname.startsWith("/blog")) {
+    const target = pathname === "/" ? "/blog" : `/blog${pathname}`;
+    return NextResponse.rewrite(new URL(`${target}${search}`, request.url));
+  }
 
   if (!isProtectedPath(pathname)) {
     return NextResponse.next();
@@ -29,5 +36,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/chat", "/settings", "/projects/:path*"],
+  matcher: ["/((?!_next/|api/|favicon\\.ico|icon\\.svg).*)"],
 };
