@@ -39,9 +39,14 @@ body {
   margin: 0;
   padding: 0;
   color: #e4e4e7;
+  background-color: #0a0a0a;
   font-family: var(--font-geist-sans), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  color-scheme: dark;
 }
 
 /* Custom scrollbar */
