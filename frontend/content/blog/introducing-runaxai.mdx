@@ -1,0 +1,36 @@
+---
+title: "Introducing RunaxAI"
+description: "Why we built an agentic RAG system with full tool access, and what it can do today."
+date: "2026-05-16"
+author: "Pragadeesh"
+tags: ["product", "launch", "rag"]
+---
+
+Most AI chat tools stop at "talk to a PDF." RunaxAI starts there and keeps
+going — document search, SQL against a live database, web search, and a
+headless browser, all reachable from one conversation.
+
+## Why another RAG app
+
+The retrieval-augmented part is table stakes by now. The interesting work is
+in the orchestration: knowing when to retrieve, when to fall back to web
+search, when to query the database directly, and when to walk a page in a
+browser. We treat that decision as a first-class concern.
+
+## What it does today
+
+- **Project workspaces.** Upload PDFs, CSVs, Word docs, Markdown, or text
+  files into a project. Chat against that project with citations back to the
+  source.
+- **Specialised agents.** Reasoning, summarisation, quiz generation, and
+  visual diagrams — picked automatically based on intent.
+- **Tool planner.** Tools stream as they run. The planner deduplicates,
+  caches when safe, and coordinates sequential and parallel calls.
+
+## Where it's going
+
+The roadmap from here is less about adding tools and more about making the
+existing ones cheaper, faster, and easier to trust. Expect more visibility
+into what the system retrieved, what it discarded, and why.
+
+This blog is where the design notes will live.

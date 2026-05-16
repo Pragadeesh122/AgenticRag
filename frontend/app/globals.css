@@ -448,6 +448,118 @@ textarea {
   margin-top: 0 !important;
 }
 
+/* ─── Blog prose: long-form reading ─── */
+.blog-prose {
+  font-size: 17px;
+  line-height: 1.75;
+  color: #d4d4d8;
+}
+
+.blog-prose > * + * {
+  margin-top: 1.25rem;
+}
+
+.blog-prose h2 {
+  margin-top: 2.75rem;
+  margin-bottom: 0.5rem;
+  font-family: var(--font-serif);
+  font-size: 1.75rem;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: #f4f4f5;
+}
+
+.blog-prose h3 {
+  margin-top: 2rem;
+  margin-bottom: 0.25rem;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #f4f4f5;
+}
+
+.blog-prose p {
+  margin: 0;
+}
+
+.blog-prose a {
+  color: #34d399;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(52, 211, 153, 0.35);
+  transition: text-decoration-color 0.15s;
+}
+.blog-prose a:hover {
+  text-decoration-color: #34d399;
+}
+
+.blog-prose strong {
+  color: #f4f4f5;
+  font-weight: 600;
+}
+
+.blog-prose em {
+  font-style: italic;
+}
+
+.blog-prose ul,
+.blog-prose ol {
+  padding-left: 1.5rem;
+}
+.blog-prose ul { list-style: disc; }
+.blog-prose ol { list-style: decimal; }
+.blog-prose li { padding: 0.15rem 0; }
+.blog-prose li::marker { color: #52525b; }
+
+.blog-prose blockquote {
+  border-left: 2px solid #10b981;
+  padding-left: 1.25rem;
+  color: #a1a1aa;
+  font-style: italic;
+}
+
+.blog-prose code:not(pre code) {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.9em;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  padding: 0.1em 0.4em;
+  color: #e4e4e7;
+}
+
+.blog-prose pre {
+  margin: 1.5rem 0;
+  padding: 1.1rem 1.25rem;
+  background: #161618;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  overflow-x: auto;
+  font-size: 13.5px;
+  line-height: 1.65;
+}
+
+.blog-prose pre code {
+  font-family: var(--font-geist-mono), monospace;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: #d4d4d8;
+}
+
+.blog-prose pre code [data-line] { display: block; }
+
+.blog-prose hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin: 2.5rem 0;
+}
+
+.blog-prose img {
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  margin: 1.75rem 0;
+}
+
 /* ─── Landing page animations ─── */
 
 @keyframes float {

@@ -1,0 +1,102 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { MDXRemote } from "next-mdx-remote/rsc";
+import rehypePrettyCode from "rehype-pretty-code";
+import rehypeSlug from "rehype-slug";
+import { formatDate, getAllPosts, getPost } from "@/lib/blog";
+
+export const revalidate = 60;
+
+export async function generateStaticParams() {
+  const posts = await getAllPosts();
+  return posts.map((p) => ({ slug: p.slug }));
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const post = await getPost(slug);
+  if (!post) return {};
+  return {
+    title: post.title,
+    description: post.description,
+  };
+}
+
+export default async function BlogPostPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+  const post = await getPost(slug);
+  if (!post) notFound();
+
+  return (
+    <article className="mx-auto max-w-2xl px-6 pt-16 pb-24">
+      <Link
+        href="/blog"
+        className="mb-10 inline-flex items-center gap-1.5 text-[12px] text-zinc-500 transition-colors hover:text-zinc-300"
+      >
+        ← All posts
+      </Link>
+
+      <header className="mb-10">
+        <div className="mb-4 flex items-center gap-3 text-[12px] text-zinc-500">
+          <time dateTime={post.date} className="tabular-nums">
+            {formatDate(post.date)}
+          </time>
+          <span className="text-zinc-700">·</span>
+          <span>{post.readingMinutes} min read</span>
+        </div>
+        <h1
+          className="text-[40px] leading-[1.1] tracking-tight text-zinc-50"
+          style={{ fontFamily: "var(--font-serif)" }}
+        >
+          {post.title}
+        </h1>
+        <p className="mt-4 text-[16px] leading-relaxed text-zinc-400">
+          {post.description}
+        </p>
+        <p className="mt-6 text-[13px] text-zinc-500">By {post.author}</p>
+      </header>
+
+      <div className="blog-prose">
+        <MDXRemote
+          source={post.content}
+          options={{
+            mdxOptions: {
+              rehypePlugins: [
+                rehypeSlug,
+                [
+                  rehypePrettyCode,
+                  {
+                    theme: "github-dark-dimmed",
+                    keepBackground: false,
+                  },
+                ],
+              ],
+            },
+          }}
+        />
+      </div>
+
+      {post.tags && post.tags.length > 0 ? (
+        <div className="mt-16 flex flex-wrap gap-2 border-t border-white/5 pt-6">
+          {post.tags.map((tag) => (
+            <span
+              key={tag}
+              className="rounded-full border border-white/5 px-2.5 py-1 text-[11px] text-zinc-500"
+            >
+              #{tag}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </article>
+  );
+}
