@@ -110,6 +110,27 @@ Because the backend builds the Google OAuth redirect URI from `FRONTEND_URL`, th
 https://runaxai.com/api/auth/callback/google
 ```
 
+## Adding a New Subdomain (e.g. blog.runaxai.com)
+
+The Cloudflare tunnel uses a `TUNNEL_TOKEN` (see `helm/agenticrag/templates/tunnel/deployment.yaml`), so public hostnames are configured in the Cloudflare Zero Trust dashboard rather than in the chart. Adding a subdomain takes three coordinated changes:
+
+1. **Cloudflare Zero Trust → Tunnels → `<your tunnel>` → Public Hostnames → Add a public hostname:**
+
+   | Field | Value |
+   |-------|-------|
+   | Subdomain | `blog` |
+   | Domain | `runaxai.com` |
+   | Service type | `HTTP` |
+   | URL | `<release>-frontend:3000` (or the API service for an API subdomain) |
+
+   Cloudflare auto-creates the proxied CNAME `blog.runaxai.com → <tunnel-id>.cfargotunnel.com`.
+
+2. **Add the host to `helm/agenticrag/values.prod.yaml`** under `ingress.hosts` so Traefik accepts the new `Host` header and routes it to the right service.
+
+3. **Frontend routing (subdomain → app route).** `frontend/middleware.ts` inspects the incoming `Host` header. For `blog.runaxai.com`, it rewrites the URL internally to `/blog/*` so the address bar stays clean (`blog.runaxai.com/some-post`) while the route lives at `app/blog/[slug]`.
+
+TLS terminates at Cloudflare's edge, so no cert-manager changes are needed in prod (cert-manager is disabled per `values.prod.yaml`).
+
 ## Monitoring Setup
 
 ### Prometheus

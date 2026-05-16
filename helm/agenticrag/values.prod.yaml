@@ -32,6 +32,11 @@ ingress:
         - path: /
           pathType: Prefix
           service: frontend
+    - host: blog.runaxai.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
     - host: api.runaxai.com
       paths:
         - path: /
@@ -41,6 +46,9 @@ ingress:
     - secretName: runaxai-com-tls
       hosts:
         - runaxai.com
+    - secretName: blog-runaxai-com-tls
+      hosts:
+        - blog.runaxai.com
     - secretName: api-runaxai-com-tls
       hosts:
         - api.runaxai.com
