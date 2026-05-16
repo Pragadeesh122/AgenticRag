@@ -1,4 +1,4 @@
-githubConfigUrl: "https://github.com/Pragadeesh122/AgenticRag"
+githubConfigUrl: "https://github.com/Pragadeesh122/RunaxAI"
 
 # Create this secret in the same namespace where the runner scale set is installed.
 # Supported auth options:
